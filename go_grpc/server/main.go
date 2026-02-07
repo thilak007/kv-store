@@ -6,14 +6,12 @@ import (
 	pb "go_grpc/proto"
 	"log"
 	"net"
-	"sync"
 
 	"google.golang.org/grpc"
 )
 
 var (
 	records = make(map[string]string)
-	mu      sync.RWMutex
 )
 
 type server struct {
@@ -23,8 +21,6 @@ type server struct {
 func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, error) {
 	log.Printf("Received PUT request for key: %s and value: %s", in.Key, in.Value)
 
-	mu.Lock()
-	defer mu.Unlock()
 
 	key := in.Key
 	value := in.Value
@@ -39,9 +35,6 @@ func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, e
 
 func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse, error) {
 	log.Printf("Received SWAP request for key: %s and new value: %s", in.Key, in.Value)
-
-	mu.Lock()
-	defer mu.Unlock()
 
 	key := in.Key
 	newvalue := in.Value
@@ -60,8 +53,6 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 func (s *server) Get(ctx context.Context, in *pb.GetRequest) (*pb.GetResponse, error) {
 	log.Printf("Received GET request for key: %s", in.Key)
 
-	mu.RLock()
-	defer mu.RUnlock()
 
 	key := in.Key
 	value, exists := records[key]
@@ -75,8 +66,6 @@ func (s *server) Get(ctx context.Context, in *pb.GetRequest) (*pb.GetResponse, e
 func (s *server) Scan(ctx context.Context, in *pb.ScanRequest) (*pb.ScanResponse, error) {
 	log.Printf("Received SCAN request from key: %s to key: %s", in.StartKey, in.EndKey)
 
-	mu.RLock()
-	defer mu.RUnlock()
 
 	startKey := in.StartKey
 	endKey := in.EndKey
@@ -99,8 +88,6 @@ func (s *server) Scan(ctx context.Context, in *pb.ScanRequest) (*pb.ScanResponse
 func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteResponse, error) {
 	log.Printf("Received DELETE request for key: %s", in.Key)
 
-	mu.Lock()
-	defer mu.Unlock()
 
 	key := in.Key
 	_, exists := records[key]
