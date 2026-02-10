@@ -6,6 +6,7 @@ import (
 	pb "go_grpc/proto"
 	"log"
 	"net"
+	"sort"
 	"sync"
 
 	"google.golang.org/grpc"
@@ -60,8 +61,8 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 func (s *server) Get(ctx context.Context, in *pb.GetRequest) (*pb.GetResponse, error) {
 	log.Printf("Received GET request for key: %s", in.Key)
 
-	mu.RLock()
-	defer mu.RUnlock()
+	mu.Lock()
+	defer mu.Unlock()
 
 	key := in.Key
 	value, exists := records[key]
@@ -72,28 +73,34 @@ func (s *server) Get(ctx context.Context, in *pb.GetRequest) (*pb.GetResponse, e
 	}, nil
 }
 
-func (s *server) Scan(ctx context.Context, in *pb.ScanRequest) (*pb.ScanResponse, error) {
+func (s *server) Scan(in *pb.ScanRequest, stream pb.KVService_ScanServer) error {
 	log.Printf("Received SCAN request from key: %s to key: %s", in.StartKey, in.EndKey)
-
-	mu.RLock()
-	defer mu.RUnlock()
 
 	startKey := in.StartKey
 	endKey := in.EndKey
-	var entries []*pb.KeyValue
 
-	for key, value := range records {
-		if key >= startKey && key <= endKey {
-			entries = append(entries, &pb.KeyValue{
-				Key:   key,
-				Value: value,
-			})
+	mu.Lock()
+	snapshot := make(map[string]string, len(records))
+	var keys []string
+	for k, v := range records {
+		if k >= startKey && k <= endKey {
+			snapshot[k] = v
+			keys = append(keys, k)
 		}
 	}
+	mu.Unlock()
 
-	return &pb.ScanResponse{
-		Entries: entries,
-	}, nil
+	sort.Strings(keys)
+	for _, key := range keys {
+		ScanRes := &pb.ScanResponse{
+			Key:   key,
+			Value: snapshot[key],
+		}
+		if err := stream.Send(ScanRes); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteResponse, error) {
