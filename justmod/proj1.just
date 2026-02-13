@@ -31,22 +31,26 @@ test1 server="127.0.0.1:3777":
 
 # run your KV store testcase 2 client
 test2 server="127.0.0.1:3777":
-    # FIXME: your testcase 2 client run command here
+    ./bin/client {{server}} < test/test2.txt
 
 # run your KV store testcase 3 client
 test3 server="127.0.0.1:3777":
-    # FIXME: your testcase 3 client run command here
+    ./bin/client {{server}} < test/test3_a.txt & \
+    ./bin/client {{server}} < test/test3_b.txt & \
+    wait
 
 # run your KV store testcase 4 client(s)
 test4 server="127.0.0.1:3777":
-    # FIXME: your testcase 4 client(s) run commands here
-    #        for multi-client testcases, this recipe should run multiple
-    #        concurrent client processes; you may write an additional runner
-    #        utility or a scripting layer to manage multiple processes
+    ./bin/client {{server}} < test/test4_a.txt & \
+    ./bin/client {{server}} < test/test4_b.txt & \
+    wait
 
 # run your KV store testcase 5 client(s)
 test5 server="127.0.0.1:3777":
-    # FIXME: your testcase 5 client(s) run commands here
+    ./bin/client {{server}} < test/test5_a.txt & \
+    ./bin/client {{server}} < test/test5_b.txt & \
+    ./bin/client {{server}} < test/test5_c.txt & \
+    wait
 
 # kill all processes of your KV store system
 kill:
