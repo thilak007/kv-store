@@ -1,0 +1,17 @@
+PUT key1 valueA1
+PUT key2 valueA2
+PUT key3 valueA3
+GET key1
+GET key2
+GET key3
+SWAP key2 valueA20
+GET key2
+PUT key1 valueA10
+DELETE key3
+GET key3
+SCAN key1 key5
+PUT key4 valueA4
+SWAP key4 valueA40
+DELETE key1
+SCAN key1 key5
+STOP
