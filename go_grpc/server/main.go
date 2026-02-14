@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/peer"
 )
 
 var (
@@ -22,7 +23,9 @@ type server struct {
 }
 
 func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, error) {
-	log.Printf("Received PUT request for key: %s and value: %s", in.Key, in.Value)
+	if p, ok := peer.FromContext(ctx); ok {
+		log.Printf("Received PUT from %s for key: %s and value: %s", p.Addr.String(), in.Key, in.Value)
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -39,7 +42,11 @@ func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, e
 }
 
 func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse, error) {
-	log.Printf("Received SWAP request for key: %s and new value: %s", in.Key, in.Value)
+
+	p, ok := peer.FromContext(ctx)
+	if ok {
+		log.Printf("Received SWAP from %s for key: %s and new value: %s", p.Addr.String(), in.Key, in.Value)
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -59,7 +66,10 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 }
 
 func (s *server) Get(ctx context.Context, in *pb.GetRequest) (*pb.GetResponse, error) {
-	log.Printf("Received GET request for key: %s", in.Key)
+	p, ok := peer.FromContext(ctx)
+	if ok {
+		log.Printf("Received GET from %s for key: %s", p.Addr.String(), in.Key)
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -74,7 +84,9 @@ func (s *server) Get(ctx context.Context, in *pb.GetRequest) (*pb.GetResponse, e
 }
 
 func (s *server) Scan(in *pb.ScanRequest, stream pb.KVService_ScanServer) error {
-	log.Printf("Received SCAN request from key: %s to key: %s", in.StartKey, in.EndKey)
+	if p, ok := peer.FromContext(stream.Context()); ok {
+		log.Printf("Received SCAN from %s from key: %s to key: %s", p.Addr.String(), in.StartKey, in.EndKey)
+	}
 
 	startKey := in.StartKey
 	endKey := in.EndKey
@@ -104,7 +116,10 @@ func (s *server) Scan(in *pb.ScanRequest, stream pb.KVService_ScanServer) error 
 }
 
 func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteResponse, error) {
-	log.Printf("Received DELETE request for key: %s", in.Key)
+	p, ok := peer.FromContext(ctx)
+	if ok {
+		log.Printf("Received DELETE from %s for key: %s", p.Addr.String(), in.Key)
+	}
 
 	mu.Lock()
 	defer mu.Unlock()

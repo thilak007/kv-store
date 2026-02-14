@@ -43,7 +43,6 @@ test2 server="127.0.0.1:3777":
 
 # run your KV store testcase 3 client
 test3 server="127.0.0.1:3777":
-    ls -la output/actual/ 2>&1 || echo "Directory does not exist"
     ./bin/client {{server}} < tests/test3_a.txt > output/actual/out3_a.txt & \
     ./bin/client {{server}} < tests/test3_b.txt > output/actual/out3_b.txt & \
     wait
@@ -55,9 +54,11 @@ test3 server="127.0.0.1:3777":
 
 # run your KV store testcase 4 client(s)
 test4 server="127.0.0.1:3777":
-    ./bin/client {{server}} < tests/test4_a.txt & \
-    ./bin/client {{server}} < tests/test4_b.txt & \
+    ./bin/client {{server}} < tests/test4_a.txt > output/actual/out4_a.txt & \
+    ./bin/client {{server}} < tests/test4_b.txt > output/actual/out4_b.txt & \
     wait
+
+    just p1::kill
 
 # run your KV store testcase 5 client(s)
 test5 server="127.0.0.1:3777":
