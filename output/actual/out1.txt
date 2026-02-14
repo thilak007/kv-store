@@ -1,0 +1,17 @@
+Running Client app
+PUT key1 not_found
+PUT key2 not_found
+PUT key3 not_found
+GET key1 value1
+GET key5 null
+SWAP key2 value2
+SWAP key5 null
+DELETE key1 found
+DELETE key6 not_found
+PUT key4 not_found
+SCAN key1 key5 BEGIN
+  key2 value20
+  key3 value3
+  key4 value4
+SCAN END
+STOP

@@ -126,6 +126,7 @@ func main() {
 	defer cancel()
 
 	scanner := bufio.NewScanner(os.Stdin)
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		args := strings.Fields(line)
@@ -146,7 +147,7 @@ func main() {
 		case "DELETE":
 			handleDelete(ctx, client, args[1])
 		case "STOP":
-			fmt.Println("STOP")
+			fmt.Print("STOP")
 		}
 	}
 }
