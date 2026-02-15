@@ -2,6 +2,8 @@
 
 # Install Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+# Add cargo env
+. "$HOME/.cargo/env"
 
 # uv manager
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -17,4 +19,6 @@ sudo apt install tree default-jre liblog4j2-java
 
 cargo install just
 
-sudo apt install golang-go
+sudo apt install golang-1.23-go
+
+export PATH=$PATH:/usr/lib/go-1.23/bin
