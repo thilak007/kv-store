@@ -12,5 +12,6 @@ SCAN key1 key5 BEGIN
   key2 value20
   key3 value3
   key4 value4
+  key5 value50
 SCAN END
 STOP
