@@ -134,14 +134,15 @@ fn fuzz_test(
             // triggering some pending checks
             if let Some((update_key, update_value)) = update_info {
                 match history.apply_update(cidx, ts_call, ts_resp, update_key, update_value) {
-                    Some(Some(resp)) => {
+                    Some(Some((resp, expected))) => {
                         cprintln!(
                             "<s><red>Consistency violation!</></>  Trigger:  client {}  <<{} - {}>>",
                             cidx,
                             ts_call,
                             ts_resp
                         );
-                        println!("  Resp: {:?}", resp);
+                        println!("  Actual Response:  {:?}", resp);
+                        println!("  Expected Output: {}", expected);
                         passed = false;
                         break;
                     }

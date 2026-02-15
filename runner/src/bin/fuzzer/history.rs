@@ -1,8 +1,41 @@
 //! Approximate real-time causal consistency checker.
 
 use std::collections::{HashMap, VecDeque};
+use std::fmt;
 
 use runner::KvResp;
+
+/// Expected values for a consistency check.
+#[derive(Debug, Clone)]
+pub(crate) enum ExpectedResult {
+    Put { possible_found: Vec<bool> },
+    Swap { possible_old_values: Vec<Option<String>> },
+    Get { possible_values: Vec<Option<String>> },
+    Delete { possible_found: Vec<bool> },
+    Scan { expected_entries: Vec<(String, String)> },
+}
+
+impl fmt::Display for ExpectedResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ExpectedResult::Put { possible_found } => {
+                write!(f, "Put - possible 'found' values: {:?}", possible_found)
+            }
+            ExpectedResult::Swap { possible_old_values } => {
+                write!(f, "Swap - possible old values: {:?}", possible_old_values)
+            }
+            ExpectedResult::Get { possible_values } => {
+                write!(f, "Get - possible values: {:?}", possible_values)
+            }
+            ExpectedResult::Delete { possible_found } => {
+                write!(f, "Delete - possible 'found' values: {:?}", possible_found)
+            }
+            ExpectedResult::Scan { expected_entries } => {
+                write!(f, "Scan - expected entries: {:?}", expected_entries)
+            }
+        }
+    }
+}
 
 /// Per-key, non-read-only operation record with timestamp span.
 #[derive(Debug, Clone)]
@@ -83,7 +116,7 @@ impl History {
     /// Add a newly acknowledged update to the history, possibly trimming the
     /// heads of the history and possibly triggering some pending results to
     /// get checked. Returns:
-    ///   - `Some(Some(resp))` if the check of a `resp` failed
+    ///   - `Some(Some((resp, expected)))` if the check of a `resp` failed
     ///   - `Some(None)` if update key is unexpected
     ///   - `None` if everything is still alright
     pub(crate) fn apply_update(
@@ -93,7 +126,7 @@ impl History {
         ts_resp: u64,
         key: String,
         value: Option<String>,
-    ) -> Option<Option<KvResp>> {
+    ) -> Option<Option<(KvResp, ExpectedResult)>> {
         if let Some(key_spans) = self.spans.get_mut(&key) {
             debug_assert!(cidx < self.maxtr.len());
             debug_assert!(cidx < key_spans.len());
@@ -137,8 +170,8 @@ impl History {
                 && self.queue.front().unwrap().ts_resp < min_coming_ts
             {
                 let entry = self.queue.pop_front().unwrap();
-                if !self.check_call(&entry) {
-                    return Some(Some(entry.resp));
+                if let Some(expected) = self.check_call(&entry) {
+                    return Some(Some((entry.resp, expected)));
                 }
             }
 
@@ -149,27 +182,28 @@ impl History {
     }
 
     /// Check a call popped off from the check queue, which is now decidable.
-    fn check_call(&self, entry: &QueuedSpan) -> bool {
+    /// Returns None if check passed, Some(ExpectedResult) if check failed.
+    fn check_call(&self, entry: &QueuedSpan) -> Option<ExpectedResult> {
         match &entry.resp {
             KvResp::Put { key, found } => {
                 if let Some(key_spans) = self.spans.get(key) {
                     Self::check_put(key_spans, entry.ts_call, entry.ts_resp, found)
                 } else {
-                    false
+                    None
                 }
             }
             KvResp::Swap { key, old_value } => {
                 if let Some(key_spans) = self.spans.get(key) {
                     Self::check_swap(key_spans, entry.ts_call, entry.ts_resp, old_value.as_ref())
                 } else {
-                    false
+                    None
                 }
             }
             KvResp::Get { key, value } => {
                 if let Some(key_spans) = self.spans.get(key) {
                     Self::check_get(key_spans, entry.ts_call, entry.ts_resp, value.as_ref())
                 } else {
-                    false
+                    None
                 }
             }
             KvResp::Scan {
@@ -188,87 +222,112 @@ impl History {
                 if let Some(key_spans) = self.spans.get(key) {
                     Self::check_delete(key_spans, entry.ts_call, entry.ts_resp, found)
                 } else {
-                    false
+                    None
                 }
             }
-            _ => false,
+            _ => None,
         }
     }
 
     /// Check a Put operation result assuming given history.
+    /// Returns None if valid, Some(expected) if invalid.
     fn check_put(
         key_spans: &[VecDeque<UpdateSpan>],
         ts_call: u64,
         ts_resp: u64,
         found: &bool,
-    ) -> bool {
+    ) -> Option<ExpectedResult> {
         // eprintln!(
         //     "--- PUT <{} - {}> {} {:?}",
         //     ts_call, ts_resp, found, key_spans
         // );
+        let mut possible_found = std::collections::HashSet::new();
         for cli_spans in key_spans {
             for span in cli_spans.iter().rev() {
                 if span.ts_call < ts_resp && span.value.is_some() == *found {
-                    return true;
+                    return None;  // Valid - found expected state
+                }
+                if span.ts_resp >= ts_call {
+                    possible_found.insert(span.value.is_some());
                 }
                 if span.ts_resp < ts_call {
                     break;
                 }
             }
         }
-        false
+        // Invalid - collect possible expected values
+        Some(ExpectedResult::Put {
+            possible_found: possible_found.into_iter().collect(),
+        })
     }
 
     /// Check a Swap operation result assuming given history.
+    /// Returns None if valid, Some(expected) if invalid.
     fn check_swap(
         key_spans: &[VecDeque<UpdateSpan>],
         ts_call: u64,
         ts_resp: u64,
         old_value: Option<&String>,
-    ) -> bool {
+    ) -> Option<ExpectedResult> {
         // eprintln!(
         //     "--- SWAP <{} - {}> {:?} {:?}",
         //     ts_call, ts_resp, old_value, key_spans
         // );
+        let mut possible_old_values = std::collections::HashSet::new();
         for cli_spans in key_spans {
             for span in cli_spans.iter().rev() {
                 if span.ts_call < ts_resp && span.value.as_ref() == old_value {
-                    return true;
+                    return None;  // Valid - found expected state
+                }
+                if span.ts_resp >= ts_call {
+                    possible_old_values.insert(span.value.clone());
                 }
                 if span.ts_resp < ts_call {
                     break;
                 }
             }
         }
-        false
+        // Invalid - collect possible expected values
+        Some(ExpectedResult::Swap {
+            possible_old_values: possible_old_values.into_iter().collect(),
+        })
     }
 
     /// Check a Get operation result assuming given history.
+    /// Returns None if valid, Some(expected) if invalid.
     fn check_get(
         key_spans: &[VecDeque<UpdateSpan>],
         ts_call: u64,
         ts_resp: u64,
         value: Option<&String>,
-    ) -> bool {
+    ) -> Option<ExpectedResult> {
         // eprintln!(
         //     "--- GET <{} - {}> {:?} {:?}",
         //     ts_call, ts_resp, value, key_spans
         // );
+        let mut possible_values = std::collections::HashSet::new();
         for cli_spans in key_spans {
             for span in cli_spans.iter().rev() {
                 if span.ts_call < ts_resp && span.value.as_ref() == value {
-                    return true;
+                    return None;  // Valid - found expected state
+                }
+                if span.ts_resp >= ts_call {
+                    possible_values.insert(span.value.clone());
                 }
                 if span.ts_resp < ts_call {
                     break;
                 }
             }
         }
-        false
+        // Invalid - collect possible expected values
+        Some(ExpectedResult::Get {
+            possible_values: possible_values.into_iter().collect(),
+        })
     }
 
     /// Check a Scan operation result assuming given history. All possible
     /// keys in range are searched here.
+    /// Returns None if valid, Some(expected) if invalid.
     fn check_scan(
         spans: &HashMap<String, Vec<VecDeque<UpdateSpan>>>,
         ts_call: u64,
@@ -276,54 +335,76 @@ impl History {
         key_start: &String,
         key_end: &String,
         entries: &[(String, String)],
-    ) -> bool {
+    ) -> Option<ExpectedResult> {
         let mut entries_map = HashMap::new();
         for (key, value) in entries {
             if key < key_start || key > key_end {
-                return false; // out-of-range in scan result
+                // out-of-range in scan result
+                return Some(ExpectedResult::Scan {
+                    expected_entries: vec![],
+                });
             }
             if entries_map.contains_key(key) {
-                return false; // duplicate key in scan result
+                // duplicate key in scan result
+                return Some(ExpectedResult::Scan {
+                    expected_entries: vec![],
+                });
             }
             entries_map.insert(key, value);
         }
 
+        // Build expected entries for valid response
+        let mut expected_entries = Vec::new();
         // eprintln!("--- SCAN <{} - {}> loop", ts_call, ts_resp);
         for (key, key_spans) in spans {
             // if key >= key_start && key <= key_end {
             //     println!("... {} {:?} {:?}", key, entries_map.get(key), key_spans);
             // }
-            if key >= key_start
-                && key <= key_end
-                && !Self::check_get(key_spans, ts_call, ts_resp, entries_map.get(key).copied())
-            {
-                return false;
+            if key >= key_start && key <= key_end {
+                if Self::check_get(key_spans, ts_call, ts_resp, entries_map.get(key).copied()).is_some() {
+                    // This key failed the check
+                    return Some(ExpectedResult::Scan {
+                        expected_entries: expected_entries,
+                    });
+                }
+                // Collect what the value should be
+                if let Some(value) = entries_map.get(key) {
+                    expected_entries.push((key.clone(), (*value).clone()));
+                }
             }
         }
-        true // all possible keys in range passed check
+        None // all possible keys in range passed check
     }
 
     /// Check a Delete operation result assuming given history.
+    /// Returns None if valid, Some(expected) if invalid.
     fn check_delete(
         key_spans: &[VecDeque<UpdateSpan>],
         ts_call: u64,
         ts_resp: u64,
         found: &bool,
-    ) -> bool {
+    ) -> Option<ExpectedResult> {
         // eprintln!(
         //     "--- DELETE <{} - {}> {} {:?}",
         //     ts_call, ts_resp, found, key_spans
         // );
+        let mut possible_found = std::collections::HashSet::new();
         for cli_spans in key_spans {
             for span in cli_spans.iter().rev() {
                 if span.ts_call < ts_resp && span.value.is_some() == *found {
-                    return true;
+                    return None;  // Valid - found expected state
+                }
+                if span.ts_resp >= ts_call {
+                    possible_found.insert(span.value.is_some());
                 }
                 if span.ts_resp < ts_call {
                     break;
                 }
             }
         }
-        false
+        // Invalid - collect possible expected values
+        Some(ExpectedResult::Delete {
+            possible_found: possible_found.into_iter().collect(),
+        })
     }
 }
