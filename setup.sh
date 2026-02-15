@@ -13,5 +13,8 @@ uv sync
 
 # apt install packages
 sudo apt update
-sudo apt install tree just default-jre liblog4j2-java
+sudo apt install tree default-jre liblog4j2-java
 
+cargo install just
+
+sudo apt install golang-go
