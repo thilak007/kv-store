@@ -113,7 +113,14 @@ func main() {
 	// Connect to the gRPC server
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	conn, err := grpc.NewClient("localhost:8080", opts...)
+
+	if len(os.Args) < 2 {
+		log.Fatalf("Usage: %s <listen_address>", os.Args[0])
+	}
+
+	listenAddr := os.Args[1]
+
+	conn, err := grpc.NewClient(listenAddr, opts...)
 	if err != nil {
 		log.Fatalf("Failed to connect: %v", err)
 	}

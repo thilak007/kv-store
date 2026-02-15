@@ -6,6 +6,7 @@ import (
 	pb "go_grpc/proto"
 	"log"
 	"net"
+	"os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -147,8 +148,14 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 }
 
 func main() {
+	if len(os.Args) < 2 {
+		log.Fatalf("Usage: %s <listen_address>", os.Args[0])
+	}
+	
+	listenAddr := os.Args[1]
+	
 	fmt.Println("Inside main ----->")
-	lis, err := net.Listen("tcp", ":8080")
+	lis, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
 	}
