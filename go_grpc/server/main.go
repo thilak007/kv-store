@@ -23,18 +23,21 @@ type server struct {
 }
 
 func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, error) {
-	if p, ok := peer.FromContext(ctx); ok {
-		log.Printf("Received PUT from %s for key: %s and value: %s", p.Addr.String(), in.Key, in.Value)
-	}
-
 	mu.Lock()
 	defer mu.Unlock()
+
+	p, ok := peer.FromContext(ctx)
+
+	if ok {
+		log.Printf("Received PUT from %s for key: %s and value: %s", p.Addr.String(), in.Key, in.Value)
+	}
 
 	key := in.Key
 	value := in.Value
 	_, exists := records[key]
 
 	records[key] = value
+	log.Printf("Sent PUT from %s for key: %s and value: %s. AlreadyExists: %t", p.Addr.String(), in.Key, in.Value, exists)
 
 	return &pb.PutResponse{
 		AlreadyExists: exists,
@@ -43,13 +46,12 @@ func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, e
 
 func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse, error) {
 
+	mu.Lock()
+	defer mu.Unlock()
 	p, ok := peer.FromContext(ctx)
 	if ok {
 		log.Printf("Received SWAP from %s for key: %s and new value: %s", p.Addr.String(), in.Key, in.Value)
 	}
-
-	mu.Lock()
-	defer mu.Unlock()
 
 	key := in.Key
 	newvalue := in.Value
@@ -59,6 +61,8 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 		records[key] = newvalue
 	}
 
+	log.Printf("Sent SWAP from %s for key: %s. OldValue: %s changed to NewValue: %s", p.Addr.String(), in.Key, oldvalue, newvalue)
+
 	return &pb.SwapResponse{
 		OldValue: oldvalue,
 		Exists:   exists,
@@ -66,16 +70,17 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 }
 
 func (s *server) Get(ctx context.Context, in *pb.GetRequest) (*pb.GetResponse, error) {
+	mu.Lock()
+	defer mu.Unlock()
 	p, ok := peer.FromContext(ctx)
 	if ok {
 		log.Printf("Received GET from %s for key: %s", p.Addr.String(), in.Key)
 	}
 
-	mu.Lock()
-	defer mu.Unlock()
-
 	key := in.Key
 	value, exists := records[key]
+
+	log.Printf("Sent GET from %s for key: %s. Got value: %s, exists: %t", p.Addr.String(), in.Key, value, exists)
 
 	return &pb.GetResponse{
 		Value:  value,
@@ -84,14 +89,15 @@ func (s *server) Get(ctx context.Context, in *pb.GetRequest) (*pb.GetResponse, e
 }
 
 func (s *server) Scan(in *pb.ScanRequest, stream pb.KVService_ScanServer) error {
-	if p, ok := peer.FromContext(stream.Context()); ok {
+	mu.Lock()
+	p, ok := peer.FromContext(stream.Context())
+	if ok {
 		log.Printf("Received SCAN from %s from key: %s to key: %s", p.Addr.String(), in.StartKey, in.EndKey)
 	}
 
 	startKey := in.StartKey
 	endKey := in.EndKey
 
-	mu.Lock()
 	snapshot := make(map[string]string, len(records))
 	var keys []string
 	for k, v := range records {
@@ -100,7 +106,6 @@ func (s *server) Scan(in *pb.ScanRequest, stream pb.KVService_ScanServer) error 
 			keys = append(keys, k)
 		}
 	}
-	mu.Unlock()
 
 	sort.Strings(keys)
 	for _, key := range keys {
@@ -108,27 +113,30 @@ func (s *server) Scan(in *pb.ScanRequest, stream pb.KVService_ScanServer) error 
 			Key:   key,
 			Value: snapshot[key],
 		}
+		log.Printf("Sent SCAN from %s from key: %s to key: %s. Key: %s, Value: %s", p.Addr.String(), in.StartKey, in.EndKey, key, snapshot[key])
 		if err := stream.Send(ScanRes); err != nil {
 			return err
 		}
 	}
+	mu.Unlock()
 	return nil
 }
 
 func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteResponse, error) {
+	mu.Lock()
+	defer mu.Unlock()
 	p, ok := peer.FromContext(ctx)
 	if ok {
 		log.Printf("Received DELETE from %s for key: %s", p.Addr.String(), in.Key)
 	}
-
-	mu.Lock()
-	defer mu.Unlock()
 
 	key := in.Key
 	_, exists := records[key]
 	if exists {
 		delete(records, key)
 	}
+
+	log.Printf("Sent DELETE from %s for key: %s. Exists: %t", p.Addr.String(), in.Key, exists)
 
 	return &pb.DeleteResponse{
 		Exists: exists,
@@ -142,7 +150,10 @@ func main() {
 		log.Fatalf("Failed to listen: %v", err)
 	}
 
-	s := grpc.NewServer()
+	s := grpc.NewServer(
+		grpc.NumStreamWorkers(1),
+		grpc.MaxConcurrentStreams(1),
+	)
 	pb.RegisterKVServiceServer(s, &server{})
 
 	log.Printf("gRPC server listening at %v", lis.Addr())
