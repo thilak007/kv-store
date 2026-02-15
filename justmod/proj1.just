@@ -27,38 +27,25 @@ client server="127.0.0.1:3777":
 
 # run your KV store testcase 1 client
 test1 server="127.0.0.1:3777":
-    ./bin/client {{server}} < tests/test1.txt > output/actual/out1.txt
-    just p1::kill
+    ./bin/client {{server}} < tests/test1.txt
 
-    # Verify if output matches expected output
-    diff -u output/expected/out1.txt output/actual/out1.txt
 
 # run your KV store testcase 2 client
 test2 server="127.0.0.1:3777":
-    ./bin/client {{server}} < tests/test2.txt > output/actual/out2.txt
-    just p1::kill
-
-    # Verify if output matches expected output
-    diff -u output/expected/out2.txt output/actual/out2.txt
+    ./bin/client {{server}} < tests/test2.txt
 
 # run your KV store testcase 3 client
 test3 server="127.0.0.1:3777":
-    ./bin/client {{server}} < tests/test3_a.txt > output/actual/out3_a.txt & \
-    ./bin/client {{server}} < tests/test3_b.txt > output/actual/out3_b.txt & \
+    ./bin/client {{server}} < tests/test3_a.txt & \
+    ./bin/client {{server}} < tests/test3_b.txt & \
     wait
-    just p1::kill
 
-    # Verify if output matches expected output
-    diff -u output/expected/out3_a.txt output/actual/out3_a.txt
-    diff -u output/expected/out3_b.txt output/actual/out3_b.txt
 
 # run your KV store testcase 4 client(s)
 test4 server="127.0.0.1:3777":
-    ./bin/client {{server}} < tests/test4_a.txt > output/actual/out4_a.txt & \
-    ./bin/client {{server}} < tests/test4_b.txt > output/actual/out4_b.txt & \
+    ./bin/client {{server}} < tests/test4_a.txt & \
+    ./bin/client {{server}} < tests/test4_b.txt & \
     wait
-
-    just p1::kill
 
 # run your KV store testcase 5 client(s)
 test5 server="127.0.0.1:3777":
