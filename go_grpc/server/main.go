@@ -59,10 +59,7 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 	key := in.Key
 	newvalue := in.Value
 	oldvalue, exists := records[key]
-
-	if exists {
-		records[key] = newvalue
-	}
+	records[key] = newvalue
 
 	log.Printf("[ReqID: %d] Sent SWAP from %s for key: %s. OldValue: %s changed to NewValue: %s", reqID, p.Addr.String(), in.Key, oldvalue, newvalue)
 
