@@ -165,7 +165,8 @@ func main() {
 		case "DELETE":
 			handleDelete(client, args[1])
 		case "STOP":
-			fmt.Print("STOP")
+			fmt.Println("STOP")
+			return
 		}
 	}
 }
