@@ -36,4 +36,4 @@ report/
 backer.*/
 .remotes
 
-bin/
+bin/*
