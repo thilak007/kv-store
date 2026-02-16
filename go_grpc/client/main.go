@@ -129,7 +129,8 @@ func main() {
 	client := pb.NewKVServiceClient(conn)
 
 	// Timeout for context
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*20)
+
 	defer cancel()
 
 	scanner := bufio.NewScanner(os.Stdin)
