@@ -76,7 +76,7 @@ func handleSwap(client pb.KVServiceClient, key, value string) {
 }
 
 func handleScan(client pb.KVServiceClient, startKey, endKey string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
 
 	req := &pb.ScanRequest{
