@@ -15,7 +15,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-func handlePut(ctx context.Context, client pb.KVServiceClient, key, value string) {
+func handlePut(client pb.KVServiceClient, key, value string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
 	req := &pb.PutRequest{
 		Key:   key,
 		Value: value,
@@ -33,7 +36,10 @@ func handlePut(ctx context.Context, client pb.KVServiceClient, key, value string
 	fmt.Printf("PUT %s %s\n", key, status)
 }
 
-func handleGet(ctx context.Context, client pb.KVServiceClient, key string) {
+func handleGet(client pb.KVServiceClient, key string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
 	req := &pb.GetRequest{
 		Key: key,
 	}
@@ -49,7 +55,10 @@ func handleGet(ctx context.Context, client pb.KVServiceClient, key string) {
 	fmt.Printf("GET %s %s\n", key, value)
 }
 
-func handleSwap(ctx context.Context, client pb.KVServiceClient, key, value string) {
+func handleSwap(client pb.KVServiceClient, key, value string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
 	req := &pb.SwapRequest{
 		Key:   key,
 		Value: value,
@@ -66,7 +75,10 @@ func handleSwap(ctx context.Context, client pb.KVServiceClient, key, value strin
 	fmt.Printf("SWAP %s %s\n", key, oldValue)
 }
 
-func handleScan(ctx context.Context, client pb.KVServiceClient, startKey, endKey string) {
+func handleScan(client pb.KVServiceClient, startKey, endKey string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
 	req := &pb.ScanRequest{
 		StartKey: startKey,
 		EndKey:   endKey,
@@ -93,7 +105,10 @@ func handleScan(ctx context.Context, client pb.KVServiceClient, startKey, endKey
 	fmt.Println("SCAN END")
 }
 
-func handleDelete(ctx context.Context, client pb.KVServiceClient, key string) {
+func handleDelete(client pb.KVServiceClient, key string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
 	req := &pb.DeleteRequest{
 		Key: key,
 	}
@@ -128,11 +143,6 @@ func main() {
 
 	client := pb.NewKVServiceClient(conn)
 
-	// Timeout for context
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*20)
-
-	defer cancel()
-
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for scanner.Scan() {
@@ -145,15 +155,15 @@ func main() {
 		cmd := args[0]
 		switch cmd {
 		case "PUT":
-			handlePut(ctx, client, args[1], args[2])
+			handlePut(client, args[1], args[2])
 		case "GET":
-			handleGet(ctx, client, args[1])
+			handleGet(client, args[1])
 		case "SWAP":
-			handleSwap(ctx, client, args[1], args[2])
+			handleSwap(client, args[1], args[2])
 		case "SCAN":
-			handleScan(ctx, client, args[1], args[2])
+			handleScan(client, args[1], args[2])
 		case "DELETE":
-			handleDelete(ctx, client, args[1])
+			handleDelete(client, args[1])
 		case "STOP":
 			fmt.Print("STOP")
 		}
