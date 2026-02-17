@@ -43,15 +43,15 @@ test3 server="127.0.0.1:3777":
 
 # run your KV store testcase 4 client(s)
 test4 server="127.0.0.1:3777":
-    ./bin/client {{server}} < tests/test4_a.txt & \
-    ./bin/client {{server}} < tests/test4_b.txt & \
+    ./bin/client {{server}} < tests/test4_a.txt > output/actual/out4_a.txt & \
+    ./bin/client {{server}} < tests/test4_b.txt > output/actual/out4_b.txt & \
     wait
 
 # run your KV store testcase 5 client(s)
 test5 server="127.0.0.1:3777":
-    ./bin/client {{server}} < tests/test5_a.txt & \
-    ./bin/client {{server}} < tests/test5_b.txt & \
-    ./bin/client {{server}} < tests/test5_c.txt & \
+    ./bin/client {{server}} < tests/test5_a.txt > output/actual/out5_a.txt & \
+    ./bin/client {{server}} < tests/test5_b.txt > output/actual/out5_b.txt & \
+    ./bin/client {{server}} < tests/test5_c.txt > output/actual/out5_c.txt & \
     wait
 
 # kill all processes of your KV store system
