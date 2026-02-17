@@ -124,9 +124,9 @@ Hence workload A is highly scalable compared to C & E. This is because A workloa
 
 ### Avg. Latency
 
-- For Workload A, the read and write avg. latency increases linearly upto 4ms. This is due increased no. of requests being sent to a single threaded server. (Increased idle time due to lock contention).
+- For Workload A, the read and write avg. latency increases linearly upto 4ms. This is due to increased no. of requests being sent to a single threaded server. (Increased idle time due to lock contention).
 - For Workload C, the read avg. latency increases near linearly upto 8.5ms.
-- For workload A, the insert and scan avg. latency goes from 0 to 250ms. It is much larger beacuses locks have to be held for longer duration due to snapshoting during scans.
+- For workload E, the insert and scan avg. latency goes from 0 to 250ms. It is much larger beacuse locks have to be held for longer duration due to snapshoting during scans.
 
 ## Additional Discussion
 
