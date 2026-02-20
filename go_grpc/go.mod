@@ -3,6 +3,7 @@ module go_grpc
 go 1.24.0
 
 require (
+	go.etcd.io/bbolt v1.4.3
 	google.golang.org/grpc v1.78.0
 	google.golang.org/protobuf v1.36.11
 )
