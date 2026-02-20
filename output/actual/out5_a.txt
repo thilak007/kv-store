@@ -1,0 +1,20 @@
+PUT key1 found
+GET key1 valueA1
+PUT key2 not_found
+SWAP key1 valueC10
+GET key1 valueA10
+SWAP key1 valueA10
+GET key2 valueC2
+DELETE key2 not_found
+GET key2 null
+PUT key1 not_found
+SCAN key1 key3 BEGIN
+  key1 valueA1000
+  key3 valueB3
+SCAN END
+DELETE key1 not_found
+GET key1 valueC100
+SCAN key1 key3 BEGIN
+  key1 valueC100
+SCAN END
+STOP

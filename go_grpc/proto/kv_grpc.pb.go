@@ -8,6 +8,7 @@ package proto
 
 import (
 	context "context"
+
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -33,7 +34,7 @@ type KVServiceClient interface {
 	Put(ctx context.Context, in *PutRequest, opts ...grpc.CallOption) (*PutResponse, error)
 	Swap(ctx context.Context, in *SwapRequest, opts ...grpc.CallOption) (*SwapResponse, error)
 	Get(ctx context.Context, in *GetRequest, opts ...grpc.CallOption) (*GetResponse, error)
-	Scan(ctx context.Context, in *ScanRequest, opts ...grpc.CallOption) (*ScanResponse, error)
+	Scan(ctx context.Context, in *ScanRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ScanResponse], error)
 	Delete(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteResponse, error)
 }
 
@@ -75,15 +76,24 @@ func (c *kVServiceClient) Get(ctx context.Context, in *GetRequest, opts ...grpc.
 	return out, nil
 }
 
-func (c *kVServiceClient) Scan(ctx context.Context, in *ScanRequest, opts ...grpc.CallOption) (*ScanResponse, error) {
+func (c *kVServiceClient) Scan(ctx context.Context, in *ScanRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ScanResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ScanResponse)
-	err := c.cc.Invoke(ctx, KVService_Scan_FullMethodName, in, out, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &KVService_ServiceDesc.Streams[0], KVService_Scan_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &grpc.GenericClientStream[ScanRequest, ScanResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
 }
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type KVService_ScanClient = grpc.ServerStreamingClient[ScanResponse]
 
 func (c *kVServiceClient) Delete(ctx context.Context, in *DeleteRequest, opts ...grpc.CallOption) (*DeleteResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -102,7 +112,7 @@ type KVServiceServer interface {
 	Put(context.Context, *PutRequest) (*PutResponse, error)
 	Swap(context.Context, *SwapRequest) (*SwapResponse, error)
 	Get(context.Context, *GetRequest) (*GetResponse, error)
-	Scan(context.Context, *ScanRequest) (*ScanResponse, error)
+	Scan(*ScanRequest, grpc.ServerStreamingServer[ScanResponse]) error
 	Delete(context.Context, *DeleteRequest) (*DeleteResponse, error)
 	mustEmbedUnimplementedKVServiceServer()
 }
@@ -123,8 +133,8 @@ func (UnimplementedKVServiceServer) Swap(context.Context, *SwapRequest) (*SwapRe
 func (UnimplementedKVServiceServer) Get(context.Context, *GetRequest) (*GetResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Get not implemented")
 }
-func (UnimplementedKVServiceServer) Scan(context.Context, *ScanRequest) (*ScanResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method Scan not implemented")
+func (UnimplementedKVServiceServer) Scan(*ScanRequest, grpc.ServerStreamingServer[ScanResponse]) error {
+	return status.Error(codes.Unimplemented, "method Scan not implemented")
 }
 func (UnimplementedKVServiceServer) Delete(context.Context, *DeleteRequest) (*DeleteResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Delete not implemented")
@@ -204,23 +214,16 @@ func _KVService_Get_Handler(srv interface{}, ctx context.Context, dec func(inter
 	return interceptor(ctx, in, info, handler)
 }
 
-func _KVService_Scan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ScanRequest)
-	if err := dec(in); err != nil {
-		return nil, err
+func _KVService_Scan_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(ScanRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
 	}
-	if interceptor == nil {
-		return srv.(KVServiceServer).Scan(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: KVService_Scan_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(KVServiceServer).Scan(ctx, req.(*ScanRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return srv.(KVServiceServer).Scan(m, &grpc.GenericServerStream[ScanRequest, ScanResponse]{ServerStream: stream})
 }
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type KVService_ScanServer = grpc.ServerStreamingServer[ScanResponse]
 
 func _KVService_Delete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeleteRequest)
@@ -260,14 +263,16 @@ var KVService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _KVService_Get_Handler,
 		},
 		{
-			MethodName: "Scan",
-			Handler:    _KVService_Scan_Handler,
-		},
-		{
 			MethodName: "Delete",
 			Handler:    _KVService_Delete_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Scan",
+			Handler:       _KVService_Scan_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "proto/kv.proto",
 }

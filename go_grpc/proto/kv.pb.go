@@ -7,11 +7,12 @@
 package proto
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -413,7 +414,7 @@ func (x *GetResponse) GetExists() bool {
 	return false
 }
 
-type KeyValue struct {
+type ScanResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
@@ -421,60 +422,9 @@ type KeyValue struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *KeyValue) Reset() {
-	*x = KeyValue{}
-	mi := &file_proto_kv_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *KeyValue) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*KeyValue) ProtoMessage() {}
-
-func (x *KeyValue) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kv_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use KeyValue.ProtoReflect.Descriptor instead.
-func (*KeyValue) Descriptor() ([]byte, []int) {
-	return file_proto_kv_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *KeyValue) GetKey() string {
-	if x != nil {
-		return x.Key
-	}
-	return ""
-}
-
-func (x *KeyValue) GetValue() string {
-	if x != nil {
-		return x.Value
-	}
-	return ""
-}
-
-type ScanResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Entries       []*KeyValue            `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
 func (x *ScanResponse) Reset() {
 	*x = ScanResponse{}
-	mi := &file_proto_kv_proto_msgTypes[9]
+	mi := &file_proto_kv_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -486,7 +436,7 @@ func (x *ScanResponse) String() string {
 func (*ScanResponse) ProtoMessage() {}
 
 func (x *ScanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kv_proto_msgTypes[9]
+	mi := &file_proto_kv_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -499,14 +449,21 @@ func (x *ScanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScanResponse.ProtoReflect.Descriptor instead.
 func (*ScanResponse) Descriptor() ([]byte, []int) {
-	return file_proto_kv_proto_rawDescGZIP(), []int{9}
+	return file_proto_kv_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *ScanResponse) GetEntries() []*KeyValue {
+func (x *ScanResponse) GetKey() string {
 	if x != nil {
-		return x.Entries
+		return x.Key
 	}
-	return nil
+	return ""
+}
+
+func (x *ScanResponse) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
 }
 
 type DeleteResponse struct {
@@ -518,7 +475,7 @@ type DeleteResponse struct {
 
 func (x *DeleteResponse) Reset() {
 	*x = DeleteResponse{}
-	mi := &file_proto_kv_proto_msgTypes[10]
+	mi := &file_proto_kv_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -530,7 +487,7 @@ func (x *DeleteResponse) String() string {
 func (*DeleteResponse) ProtoMessage() {}
 
 func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kv_proto_msgTypes[10]
+	mi := &file_proto_kv_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -543,7 +500,7 @@ func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteResponse.ProtoReflect.Descriptor instead.
 func (*DeleteResponse) Descriptor() ([]byte, []int) {
-	return file_proto_kv_proto_rawDescGZIP(), []int{10}
+	return file_proto_kv_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *DeleteResponse) GetExists() bool {
@@ -580,19 +537,17 @@ const file_proto_kv_proto_rawDesc = "" +
 	"\x06exists\x18\x02 \x01(\bR\x06exists\";\n" +
 	"\vGetResponse\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\tR\x05value\x12\x16\n" +
-	"\x06exists\x18\x02 \x01(\bR\x06exists\"2\n" +
-	"\bKeyValue\x12\x10\n" +
+	"\x06exists\x18\x02 \x01(\bR\x06exists\"6\n" +
+	"\fScanResponse\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value\"=\n" +
-	"\fScanResponse\x12-\n" +
-	"\aentries\x18\x01 \x03(\v2\x13.kvservice.KeyValueR\aentries\"(\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\"(\n" +
 	"\x0eDeleteResponse\x12\x16\n" +
-	"\x06exists\x18\x01 \x01(\bR\x06exists2\xa8\x02\n" +
+	"\x06exists\x18\x01 \x01(\bR\x06exists2\xaa\x02\n" +
 	"\tKVService\x124\n" +
 	"\x03Put\x12\x15.kvservice.PutRequest\x1a\x16.kvservice.PutResponse\x127\n" +
 	"\x04Swap\x12\x16.kvservice.SwapRequest\x1a\x17.kvservice.SwapResponse\x124\n" +
-	"\x03Get\x12\x15.kvservice.GetRequest\x1a\x16.kvservice.GetResponse\x127\n" +
-	"\x04Scan\x12\x16.kvservice.ScanRequest\x1a\x17.kvservice.ScanResponse\x12=\n" +
+	"\x03Get\x12\x15.kvservice.GetRequest\x1a\x16.kvservice.GetResponse\x129\n" +
+	"\x04Scan\x12\x16.kvservice.ScanRequest\x1a\x17.kvservice.ScanResponse0\x01\x12=\n" +
 	"\x06Delete\x12\x18.kvservice.DeleteRequest\x1a\x19.kvservice.DeleteResponseB\x0fZ\rgo_grpc/protob\x06proto3"
 
 var (
@@ -607,7 +562,7 @@ func file_proto_kv_proto_rawDescGZIP() []byte {
 	return file_proto_kv_proto_rawDescData
 }
 
-var file_proto_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_proto_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_proto_kv_proto_goTypes = []any{
 	(*PutRequest)(nil),     // 0: kvservice.PutRequest
 	(*SwapRequest)(nil),    // 1: kvservice.SwapRequest
@@ -617,27 +572,25 @@ var file_proto_kv_proto_goTypes = []any{
 	(*PutResponse)(nil),    // 5: kvservice.PutResponse
 	(*SwapResponse)(nil),   // 6: kvservice.SwapResponse
 	(*GetResponse)(nil),    // 7: kvservice.GetResponse
-	(*KeyValue)(nil),       // 8: kvservice.KeyValue
-	(*ScanResponse)(nil),   // 9: kvservice.ScanResponse
-	(*DeleteResponse)(nil), // 10: kvservice.DeleteResponse
+	(*ScanResponse)(nil),   // 8: kvservice.ScanResponse
+	(*DeleteResponse)(nil), // 9: kvservice.DeleteResponse
 }
 var file_proto_kv_proto_depIdxs = []int32{
-	8,  // 0: kvservice.ScanResponse.entries:type_name -> kvservice.KeyValue
-	0,  // 1: kvservice.KVService.Put:input_type -> kvservice.PutRequest
-	1,  // 2: kvservice.KVService.Swap:input_type -> kvservice.SwapRequest
-	2,  // 3: kvservice.KVService.Get:input_type -> kvservice.GetRequest
-	3,  // 4: kvservice.KVService.Scan:input_type -> kvservice.ScanRequest
-	4,  // 5: kvservice.KVService.Delete:input_type -> kvservice.DeleteRequest
-	5,  // 6: kvservice.KVService.Put:output_type -> kvservice.PutResponse
-	6,  // 7: kvservice.KVService.Swap:output_type -> kvservice.SwapResponse
-	7,  // 8: kvservice.KVService.Get:output_type -> kvservice.GetResponse
-	9,  // 9: kvservice.KVService.Scan:output_type -> kvservice.ScanResponse
-	10, // 10: kvservice.KVService.Delete:output_type -> kvservice.DeleteResponse
-	6,  // [6:11] is the sub-list for method output_type
-	1,  // [1:6] is the sub-list for method input_type
-	1,  // [1:1] is the sub-list for extension type_name
-	1,  // [1:1] is the sub-list for extension extendee
-	0,  // [0:1] is the sub-list for field type_name
+	0, // 0: kvservice.KVService.Put:input_type -> kvservice.PutRequest
+	1, // 1: kvservice.KVService.Swap:input_type -> kvservice.SwapRequest
+	2, // 2: kvservice.KVService.Get:input_type -> kvservice.GetRequest
+	3, // 3: kvservice.KVService.Scan:input_type -> kvservice.ScanRequest
+	4, // 4: kvservice.KVService.Delete:input_type -> kvservice.DeleteRequest
+	5, // 5: kvservice.KVService.Put:output_type -> kvservice.PutResponse
+	6, // 6: kvservice.KVService.Swap:output_type -> kvservice.SwapResponse
+	7, // 7: kvservice.KVService.Get:output_type -> kvservice.GetResponse
+	8, // 8: kvservice.KVService.Scan:output_type -> kvservice.ScanResponse
+	9, // 9: kvservice.KVService.Delete:output_type -> kvservice.DeleteResponse
+	5, // [5:10] is the sub-list for method output_type
+	0, // [0:5] is the sub-list for method input_type
+	0, // [0:0] is the sub-list for extension type_name
+	0, // [0:0] is the sub-list for extension extendee
+	0, // [0:0] is the sub-list for field type_name
 }
 
 func init() { file_proto_kv_proto_init() }
@@ -651,7 +604,7 @@ func file_proto_kv_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_kv_proto_rawDesc), len(file_proto_kv_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
