@@ -109,6 +109,7 @@ func (s *server) Scan(in *pb.ScanRequest, stream pb.KVService_ScanServer) error 
 			keys = append(keys, k)
 		}
 	}
+	mu.Unlock()
 
 	sort.Strings(keys)
 	for _, key := range keys {
@@ -121,7 +122,6 @@ func (s *server) Scan(in *pb.ScanRequest, stream pb.KVService_ScanServer) error 
 			return err
 		}
 	}
-	mu.Unlock()
 	return nil
 }
 
@@ -160,10 +160,7 @@ func main() {
 		log.Fatalf("Failed to listen: %v", err)
 	}
 
-	s := grpc.NewServer(
-		grpc.NumStreamWorkers(1),
-		grpc.MaxConcurrentStreams(1),
-	)
+	s := grpc.NewServer()
 	pb.RegisterKVServiceServer(s, &server{})
 
 	log.Printf("gRPC server listening at %v", lis.Addr())
