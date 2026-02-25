@@ -15,6 +15,11 @@ service KVService {
   rpc Delete(DeleteRequest) returns (DeleteResponse);
 }
 
+service ClusterManager {
+  rpc RegisterServer(RegisterRequest) returns (RegisterResponse);
+  rpc GetPartitionMap(PartitionMapRequest) returns (PartitionMapResponse);
+}
+
 // -----------------------------
 // Requests
 // -----------------------------
@@ -41,6 +46,13 @@ message DeleteRequest {
   string key = 1;
 }
 
+message RegisterRequest {
+  int32 server_id = 1;
+}
+
+
+message PartitionMapRequest {}
+
 
 // -----------------------------
 // Responses
@@ -66,4 +78,14 @@ message ScanResponse {
 
 message DeleteResponse{
   bool exists = 1;
+}
+
+message RegisterResponse{
+  int32 partition_id = 1;
+  bool success = 2;
+}
+
+message PartitionMapResponse{
+  int32 num_partitions = 1;
+  map<int32, string> partition_map = 2;
 }

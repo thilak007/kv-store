@@ -5,9 +5,11 @@ import (
 	"context"
 	"fmt"
 	pb "go_grpc/proto"
+	"hash/fnv"
 	"io"
 	"log"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,133 +18,281 @@ import (
 )
 
 func handlePut(client pb.KVServiceClient, key, value string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
+	retryDelay := 1 * time.Second
+	attempt := 0
 
 	req := &pb.PutRequest{
 		Key:   key,
 		Value: value,
 	}
-	res, err := client.Put(ctx, req)
-	if err != nil {
-		log.Fatalf("PUT Error: %v", err)
-		return
-	}
 
-	status := "not_found"
-	if res.AlreadyExists {
-		status = "found"
+	for {
+		attempt++
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+
+		res, err := client.Put(ctx, req)
+		cancel()
+
+		if err == nil {
+			status := "not_found"
+			if res.AlreadyExists {
+				status = "found"
+			}
+			fmt.Printf("PUT %s %s\n", key, status)
+			return
+		}
+		// Failed - retry indefinitely
+		log.Printf("PUT failed (attempt %d): %v. Retrying in %v...", attempt, err, retryDelay)
+		time.Sleep(retryDelay)
 	}
-	fmt.Printf("PUT %s %s\n", key, status)
 }
 
 func handleGet(client pb.KVServiceClient, key string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
+	retryDelay := 1 * time.Second
+	attempt := 0
 
-	req := &pb.GetRequest{
-		Key: key,
+	req := &pb.GetRequest{Key: key}
+
+	for {
+		attempt++
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+
+		res, err := client.Get(ctx, req)
+		cancel()
+		if err == nil {
+			value := "null"
+			if res.Exists {
+				value = res.Value
+			}
+			fmt.Printf("GET %s %s\n", key, value)
+			return
+		}
+		// Failed - retry indefinitely
+		log.Printf("GET failed (attempt %d): %v. Retrying in %v...", attempt, err, retryDelay)
+		time.Sleep(retryDelay)
 	}
-	res, err := client.Get(ctx, req)
-	if err != nil {
-		log.Fatalf("GET Error: %v", err)
-		return
-	}
-	value := "null"
-	if res.Exists {
-		value = res.Value
-	}
-	fmt.Printf("GET %s %s\n", key, value)
 }
 
 func handleSwap(client pb.KVServiceClient, key, value string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
+	retryDelay := 1 * time.Second
+	attempt := 0
 
 	req := &pb.SwapRequest{
 		Key:   key,
 		Value: value,
 	}
-	res, err := client.Swap(ctx, req)
-	if err != nil {
-		log.Fatalf("SWAP Error: %v", err)
-		return
+
+	for {
+		attempt++
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+
+		res, err := client.Swap(ctx, req)
+		cancel()
+
+		if err == nil {
+			oldValue := "null"
+			if res.Exists {
+				oldValue = res.OldValue
+			}
+			fmt.Printf("SWAP %s %s\n", key, oldValue)
+			return
+		}
+		// Failed - retry indefinitely
+		log.Printf("SWAP failed (attempt %d): %v. Retrying in %v...", attempt, err, retryDelay)
+		time.Sleep(retryDelay)
 	}
-	oldValue := "null"
-	if res.Exists {
-		oldValue = res.OldValue
-	}
-	fmt.Printf("SWAP %s %s\n", key, oldValue)
 }
 
-func handleScan(client pb.KVServiceClient, startKey, endKey string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-	defer cancel()
+func handleScan(serverClients map[string]pb.KVServiceClient, startKey, endKey string) {
+	retryDelay := 1 * time.Second
+	attempt := 0
 
 	req := &pb.ScanRequest{
 		StartKey: startKey,
 		EndKey:   endKey,
 	}
-	res, err := client.Scan(ctx, req)
-	if err != nil {
-		log.Fatalf("SCAN Error: %v", err)
-		return
-	}
-	fmt.Printf("SCAN %s %s BEGIN\n", startKey, endKey)
 
 	for {
-		kv, err := res.Recv()
-		if err == io.EOF {
-			break
+		attempt++
+		allResp := make(map[string]string)
+		allSucceeded := true
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		// Query all servers
+		for serverAddr, client := range serverClients {
+			res, err := client.Scan(ctx, req)
+			if err != nil {
+				log.Printf("SCAN error from %s (attempt %d): %v", serverAddr, attempt, err)
+				allSucceeded = false
+				break
+			}
+
+			// Receive all results from this server
+			for {
+				kv, err := res.Recv()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					log.Printf("SCAN recv error from %s (attempt %d): %v", serverAddr, attempt, err)
+					allSucceeded = false
+					break
+				}
+				allResp[kv.Key] = kv.Value
+			}
+
+			if !allSucceeded {
+				break
+			}
 		}
-		if err != nil {
-			log.Println("SCAN recv error:", err)
+
+		cancel()
+
+		// If all servers succeeded, return results
+		if allSucceeded {
+			fmt.Printf("SCAN %s %s BEGIN\n", startKey, endKey)
+
+			// Extract and sort keys
+			var keys []string
+			for key := range allResp {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+
+			// Print results
+			for _, key := range keys {
+				fmt.Printf("  %s %s\n", key, allResp[key])
+			}
+
+			fmt.Println("SCAN END")
 			return
 		}
-		fmt.Printf("  %s %s\n", kv.Key, kv.Value)
-	}
 
-	fmt.Println("SCAN END")
+		// Failed - retry
+		log.Printf("SCAN failed (attempt %d). Retrying in %v...", attempt, retryDelay)
+		time.Sleep(retryDelay)
+	}
 }
 
 func handleDelete(client pb.KVServiceClient, key string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-	defer cancel()
+	retryDelay := 1 * time.Second
+	attempt := 0
 
-	req := &pb.DeleteRequest{
-		Key: key,
+	req := &pb.DeleteRequest{Key: key}
+
+	for {
+		attempt++
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+
+		res, err := client.Delete(ctx, req)
+		cancel()
+
+		if err == nil {
+			value := "not_found"
+			if res.Exists {
+				value = "found"
+			}
+			fmt.Printf("DELETE %s %s\n", key, value)
+			return
+		}
+		// Failed - retry indefinitely
+		log.Printf("DELETE failed (attempt %d): %v. Retrying in %v...", attempt, err, retryDelay)
+		time.Sleep(retryDelay)
 	}
-	res, err := client.Delete(ctx, req)
-	if err != nil {
-		log.Fatalf("DELETE Error: %v", err)
-		return
-	}
-	value := "not_found"
-	if res.Exists {
-		value = "found"
-	}
-	fmt.Printf("DELETE %s %s\n", key, value)
 }
 
-func main() {
-	// Connect to the gRPC server
+func getPartitionMap(ManagerAddr string) (int32, map[int32]string) {
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 
+	retryDelay := 2 * time.Second
+	attempt := 0
+
+	for {
+		attempt++
+		log.Printf("Attempting to connect to Manager at %s (attempt %d)", ManagerAddr, attempt)
+
+		managerConn, err := grpc.NewClient(ManagerAddr, opts...)
+		if err != nil {
+			log.Fatalf("Failed to connect: %v. Retrying in %v...", err, retryDelay)
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		managerClient := pb.NewClusterManagerClient(managerConn, opts)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		res, err := managerClient.GetPartitionMap(ctx, &pb.PartitionMapRequest{})
+
+		cancel()
+		managerConn.Close()
+
+		if err != nil {
+			log.Printf("Get Partition Map Error: %v. Retrying in %v...", err, retryDelay)
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		log.Printf("Successfully retrieved partition map: %d partitions", res.NumPartitions)
+		return res.NumPartitions, res.PartitionMap
+	}
+}
+
+func connectToServer(serverAddr string) (*grpc.ClientConn, pb.KVServiceClient) {
+	retryDelay := 2 * time.Second
+	attempt := 0
+
+	var opts []grpc.DialOption
+	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+
+	for {
+		attempt++
+		log.Printf("Connecting to server %s (attempt %d)...", serverAddr, attempt)
+
+		conn, err := grpc.NewClient(serverAddr, opts...)
+		if err != nil {
+			log.Printf("Failed to connect to server %s: %v. Retrying in %v...", serverAddr, err, retryDelay)
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		client := pb.NewKVServiceClient(conn)
+		log.Printf("Successfully connected to server %s", serverAddr)
+		return conn, client
+	}
+}
+
+func hashKey(key string, numPartitions int32) int32 {
+	h := fnv.New32a()
+	h.Write([]byte(key))
+	return int32(h.Sum32()) % numPartitions
+}
+
+func main() {
 	if len(os.Args) < 2 {
-		log.Fatalf("Usage: %s <listen_address>", os.Args[0])
+		log.Fatalf("Usage: %s <manager_address>", os.Args[0])
 	}
 
-	listenAddr := os.Args[1]
+	// Get partition map from Manager
+	managerAddr := os.Args[1]
+	numPartitions, partitionMap := getPartitionMap(managerAddr)
 
-	conn, err := grpc.NewClient(listenAddr, opts...)
-	if err != nil {
-		log.Fatalf("Failed to connect: %v", err)
+	// Connect to all servers
+	serverClients := make(map[string]pb.KVServiceClient)
+	serverConns := make(map[string]*grpc.ClientConn)
+
+	for _, serverAddr := range partitionMap {
+		conn, client := connectToServer(serverAddr)
+		serverClients[serverAddr] = client
+		serverConns[serverAddr] = conn
 	}
-	defer conn.Close()
+	defer func() {
+		for _, conn := range serverConns {
+			conn.Close()
+		}
+	}()
 
-	client := pb.NewKVServiceClient(conn)
-
+	// Read commands from stdin
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for scanner.Scan() {
@@ -153,20 +303,31 @@ func main() {
 			continue
 		}
 		cmd := args[0]
-		switch cmd {
-		case "PUT":
-			handlePut(client, args[1], args[2])
-		case "GET":
-			handleGet(client, args[1])
-		case "SWAP":
-			handleSwap(client, args[1], args[2])
-		case "SCAN":
-			handleScan(client, args[1], args[2])
-		case "DELETE":
-			handleDelete(client, args[1])
-		case "STOP":
+
+		if cmd == "STOP" {
 			fmt.Println("STOP")
 			return
+		}
+
+		switch cmd {
+		case "SCAN":
+			handleScan(serverClients, args[1], args[2])
+		default:
+			key := args[1]
+			partitionId := hashKey(key, numPartitions)
+			serverAddr := partitionMap[partitionId]
+			client := serverClients[serverAddr]
+
+			switch cmd {
+			case "PUT":
+				handlePut(client, key, args[2])
+			case "GET":
+				handleGet(client, key)
+			case "SWAP":
+				handleSwap(client, key, args[2])
+			case "DELETE":
+				handleDelete(client, key)
+			}
 		}
 	}
 }
