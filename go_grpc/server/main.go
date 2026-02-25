@@ -9,10 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/peer"
 
 	bolt "go.etcd.io/bbolt"
@@ -26,8 +29,9 @@ var (
 
 type server struct {
 	pb.UnimplementedKVServiceServer
-	db         *bolt.DB
-	bucketName string
+	db            *bolt.DB
+	bucketName    string
+	myPartitionId int32
 }
 
 func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, error) {
@@ -188,18 +192,68 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 	}, nil
 }
 
+func Register(ManagerAddr string, serverId int32) int32 {
+	retryDelay := 2 * time.Second
+	attempt := 0
+
+	var opts []grpc.DialOption
+	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+
+	for {
+		attempt++
+		log.Printf("Attempting to register with Manager at %s (Attempt %d)", ManagerAddr, attempt)
+
+		managerConn, err := grpc.NewClient(ManagerAddr, opts...)
+		if err != nil {
+			log.Fatalf("Failed to connect: %v. Retrying...", err)
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		managerClient := pb.NewClusterManagerClient(managerConn)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+
+		req := &pb.RegisterRequest{ServerId: serverId}
+		res, err := managerClient.RegisterServer(ctx, req)
+		cancel()
+		managerConn.Close()
+
+		if err != nil {
+			log.Printf("Register Server Error: %v. Retrying...", err)
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		if !res.Success {
+			log.fatalf("Manager rejected registration for server ID %d.", serverId)
+		}
+
+		log.Printf("Successfully registered with Manager. Assigned Partition ID: %d", res.PartitionId)
+		return res.PartitionId
+	}
+}
+
 func main() {
-	if len(os.Args) < 3 {
-		log.Fatalf("Usage: %s <listen_address> <storage_dir>", os.Args[0])
+	if len(os.Args) < 5 {
+		log.Fatalf("Usage: %s <manager_address> <listen_address> <server_id> <storage_dir>", os.Args[0])
 	}
 
 	fmt.Println("Inside main ----->")
 
 	// Args
-	listenAddr := os.Args[1]
-	storageDir := os.Args[2] // Path to the directory where BoltDB will store its data files
+	ManagerAddr := os.Args[1]
+	listenAddr := os.Args[2]
+	serverIdStr := os.Args[3]
+	storageDir := os.Args[4] // Path to the directory where BoltDB will store its data files
 	dbPath := filepath.Join(storageDir, "kvstore.db")
 	bucketName := "kvstore_bucket"
+
+	// Register with Manager to get partition ID
+	serverId, err := strconv.ParseInt(serverIdStr, 10, 32)
+	if err != nil {
+		log.Fatalf("Invalid server ID: %v", err)
+	}
+	partitionId := Register(ManagerAddr, int32(serverId))
 
 	// Ensure the storage directory exists
 	if err := os.MkdirAll(storageDir, 0755); err != nil {
@@ -243,8 +297,9 @@ func main() {
 
 	s := grpc.NewServer()
 	pb.RegisterKVServiceServer(s, &server{
-		db:         db,
-		bucketName: bucketName,
+		db:            db,
+		bucketName:    bucketName,
+		myPartitionId: partitionId,
 	})
 
 	log.Printf("gRPC server listening at %v", lis.Addr())
