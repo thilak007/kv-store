@@ -6,64 +6,58 @@ default:
 
 # install extra dependencies of your KV code
 deps:
-    cd go_grpc && go mod tidy
+    # FIXME: your dependency installation commands here
 
 # build your executables in release mode
 build:
-    cd go_grpc/server && go build -o ../../bin/server main.go
-    cd go_grpc/client && go build -o ../../bin/client main.go
+    # FIXME: your build commands here (don't include clean)
 
 # clean the build of your executables
 clean:
-    rm -rf bin/
+    # FIXME: your clean commands here
 
 # run your KV store server
 server listen="0.0.0.0:3777":
-    ./bin/server {{listen}}
+    # FIXME: your server run command here, listening on addr for new clients
 
 # run you KV store client in stdin/out interface mode
 client server="127.0.0.1:3777":
-    ./bin/client {{server}}
+    # FIXME: your client run command here, connecting to server at addr
 
 # run your KV store testcase 1 client
 test1 server="127.0.0.1:3777":
-    ./bin/client {{server}} < tests/test1.txt
-
+    # FIXME: your testcase 1 client run command here
+    #        for testcases, feel free to reuse 'just p1::client' if you
+    #        designed your clients this way, or invoke different executables
 
 # run your KV store testcase 2 client
 test2 server="127.0.0.1:3777":
-    ./bin/client {{server}} < tests/test2.txt
+    # FIXME: your testcase 2 client run command here
 
 # run your KV store testcase 3 client
 test3 server="127.0.0.1:3777":
-    ./bin/client {{server}} < tests/test3_a.txt & \
-    ./bin/client {{server}} < tests/test3_b.txt & \
-    wait
-
+    # FIXME: your testcase 3 client run command here
 
 # run your KV store testcase 4 client(s)
 test4 server="127.0.0.1:3777":
-    ./bin/client {{server}} < tests/test4_a.txt > output/actual/out4_a.txt & \
-    ./bin/client {{server}} < tests/test4_b.txt > output/actual/out4_b.txt & \
-    wait
+    # FIXME: your testcase 4 client(s) run commands here
+    #        for multi-client testcases, this recipe should run multiple
+    #        concurrent client processes; you may write an additional runner
+    #        utility or a scripting layer to manage multiple processes
 
 # run your KV store testcase 5 client(s)
 test5 server="127.0.0.1:3777":
-    ./bin/client {{server}} < tests/test5_a.txt > output/actual/out5_a.txt & \
-    ./bin/client {{server}} < tests/test5_b.txt > output/actual/out5_b.txt & \
-    ./bin/client {{server}} < tests/test5_c.txt > output/actual/out5_c.txt & \
-    wait
+    # FIXME: your testcase 5 client(s) run commands here
 
 # kill all processes of your KV store system
 kill:
-    # Comments:  kills all server, clients, and any extra helper
-    #        processes of your system; redirecting both out & err to /dev/null is recommended
-    #
+    # FIXME: your kill commands here
+    #        make sure that it kills all server, clients, and any extra helper
+    #        processes of your system; redirecting both out & err to /dev/null
+    #        is recommended
     #   TIP: commands such as 'pkill' may return non-zero exit code on success,
     #        which would by default abort the 'just' recipe early; prepend the
     #        command with a '-' sign to ignore its exit code
-    -pkill -f "bin/server" > /dev/null 2>&1
-    -pkill -f "bin/client" > /dev/null 2>&1
 
 # NOTE: feel free to add more recipes as you see fit...
 #       also feel free to add extra parameters to the recipes as you see fit,
