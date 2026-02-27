@@ -49,9 +49,6 @@ func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, e
 	value := in.Value
 	_, exists := records[key]
 
-	// Update in-memory map
-	records[key] = value
-
 	// Persist to BoltDB
 	err := s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(s.bucketName))
@@ -61,6 +58,9 @@ func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, e
 	if err != nil {
 		log.Printf("[ReqID: %d] Failed to persist PUT to BoltDB: %v", reqID, err)
 	}
+
+	// Update in-memory map
+	records[key] = value
 
 	log.Printf("[ReqID: %d] Sent PUT from %s for key: %s and value: %s. AlreadyExists: %t", reqID, p.Addr.String(), in.Key, in.Value, exists)
 
@@ -81,7 +81,6 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 	key := in.Key
 	newvalue := in.Value
 	oldvalue, exists := records[key]
-	records[key] = newvalue
 
 	// Persist to BoltDB
 	err := s.db.Update(func(tx *bolt.Tx) error {
@@ -91,8 +90,10 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 
 	if err != nil {
 		log.Printf("[ReqID: %d] Failed to persist SWAP to BoltDB: %v", reqID, err)
+		// todo: return error response if db failed (do for all)
 	}
 
+	records[key] = newvalue
 	log.Printf("[ReqID: %d] Sent SWAP from %s for key: %s. OldValue: %s changed to NewValue: %s", reqID, p.Addr.String(), in.Key, oldvalue, newvalue)
 
 	return &pb.SwapResponse{
@@ -193,8 +194,8 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 }
 
 func Register(ManagerAddr string, serverId int32) int32 {
-	retryDelay := 2 * time.Second
-	attempt := 0
+	attempt := 1
+	retryDelay := time.Duration(2*attempt) * time.Second
 
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -225,7 +226,7 @@ func Register(ManagerAddr string, serverId int32) int32 {
 		}
 
 		if !res.Success {
-			log.fatalf("Manager rejected registration for server ID %d.", serverId)
+			log.Fatalf("Manager rejected registration for server ID %d.", serverId)
 		}
 
 		log.Printf("Successfully registered with Manager. Assigned Partition ID: %d", res.PartitionId)

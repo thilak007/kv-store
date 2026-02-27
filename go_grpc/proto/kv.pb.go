@@ -21,6 +21,9 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// -----------------------------
+// Requests
+// -----------------------------
 type PutRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -265,6 +268,89 @@ func (x *DeleteRequest) GetKey() string {
 	return ""
 }
 
+type RegisterRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ServerId      int32                  `protobuf:"varint,1,opt,name=server_id,json=serverId,proto3" json:"server_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterRequest) Reset() {
+	*x = RegisterRequest{}
+	mi := &file_proto_kv_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterRequest) ProtoMessage() {}
+
+func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_kv_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterRequest.ProtoReflect.Descriptor instead.
+func (*RegisterRequest) Descriptor() ([]byte, []int) {
+	return file_proto_kv_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *RegisterRequest) GetServerId() int32 {
+	if x != nil {
+		return x.ServerId
+	}
+	return 0
+}
+
+type PartitionMapRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PartitionMapRequest) Reset() {
+	*x = PartitionMapRequest{}
+	mi := &file_proto_kv_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PartitionMapRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PartitionMapRequest) ProtoMessage() {}
+
+func (x *PartitionMapRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_kv_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PartitionMapRequest.ProtoReflect.Descriptor instead.
+func (*PartitionMapRequest) Descriptor() ([]byte, []int) {
+	return file_proto_kv_proto_rawDescGZIP(), []int{6}
+}
+
+// -----------------------------
+// Responses
+// -----------------------------
 type PutResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AlreadyExists bool                   `protobuf:"varint,1,opt,name=already_exists,json=alreadyExists,proto3" json:"already_exists,omitempty"`
@@ -274,7 +360,7 @@ type PutResponse struct {
 
 func (x *PutResponse) Reset() {
 	*x = PutResponse{}
-	mi := &file_proto_kv_proto_msgTypes[5]
+	mi := &file_proto_kv_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -286,7 +372,7 @@ func (x *PutResponse) String() string {
 func (*PutResponse) ProtoMessage() {}
 
 func (x *PutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kv_proto_msgTypes[5]
+	mi := &file_proto_kv_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -299,7 +385,7 @@ func (x *PutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PutResponse.ProtoReflect.Descriptor instead.
 func (*PutResponse) Descriptor() ([]byte, []int) {
-	return file_proto_kv_proto_rawDescGZIP(), []int{5}
+	return file_proto_kv_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PutResponse) GetAlreadyExists() bool {
@@ -311,7 +397,7 @@ func (x *PutResponse) GetAlreadyExists() bool {
 
 type SwapResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	OldValue      string                 `protobuf:"bytes,1,opt,name=old_value,json=oldValue,proto3" json:"old_value,omitempty"`
+	OldValue      string                 `protobuf:"bytes,1,opt,name=old_value,json=oldValue,proto3" json:"old_value,omitempty"` // if exists
 	Exists        bool                   `protobuf:"varint,2,opt,name=exists,proto3" json:"exists,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -319,7 +405,7 @@ type SwapResponse struct {
 
 func (x *SwapResponse) Reset() {
 	*x = SwapResponse{}
-	mi := &file_proto_kv_proto_msgTypes[6]
+	mi := &file_proto_kv_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -331,7 +417,7 @@ func (x *SwapResponse) String() string {
 func (*SwapResponse) ProtoMessage() {}
 
 func (x *SwapResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kv_proto_msgTypes[6]
+	mi := &file_proto_kv_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -344,7 +430,7 @@ func (x *SwapResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SwapResponse.ProtoReflect.Descriptor instead.
 func (*SwapResponse) Descriptor() ([]byte, []int) {
-	return file_proto_kv_proto_rawDescGZIP(), []int{6}
+	return file_proto_kv_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *SwapResponse) GetOldValue() string {
@@ -363,7 +449,7 @@ func (x *SwapResponse) GetExists() bool {
 
 type GetResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Value         string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
+	Value         string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"` // if exists
 	Exists        bool                   `protobuf:"varint,2,opt,name=exists,proto3" json:"exists,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -371,7 +457,7 @@ type GetResponse struct {
 
 func (x *GetResponse) Reset() {
 	*x = GetResponse{}
-	mi := &file_proto_kv_proto_msgTypes[7]
+	mi := &file_proto_kv_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -383,7 +469,7 @@ func (x *GetResponse) String() string {
 func (*GetResponse) ProtoMessage() {}
 
 func (x *GetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kv_proto_msgTypes[7]
+	mi := &file_proto_kv_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -396,7 +482,7 @@ func (x *GetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetResponse.ProtoReflect.Descriptor instead.
 func (*GetResponse) Descriptor() ([]byte, []int) {
-	return file_proto_kv_proto_rawDescGZIP(), []int{7}
+	return file_proto_kv_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetResponse) GetValue() string {
@@ -423,7 +509,7 @@ type ScanResponse struct {
 
 func (x *ScanResponse) Reset() {
 	*x = ScanResponse{}
-	mi := &file_proto_kv_proto_msgTypes[8]
+	mi := &file_proto_kv_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -435,7 +521,7 @@ func (x *ScanResponse) String() string {
 func (*ScanResponse) ProtoMessage() {}
 
 func (x *ScanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kv_proto_msgTypes[8]
+	mi := &file_proto_kv_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -448,7 +534,7 @@ func (x *ScanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScanResponse.ProtoReflect.Descriptor instead.
 func (*ScanResponse) Descriptor() ([]byte, []int) {
-	return file_proto_kv_proto_rawDescGZIP(), []int{8}
+	return file_proto_kv_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ScanResponse) GetKey() string {
@@ -474,7 +560,7 @@ type DeleteResponse struct {
 
 func (x *DeleteResponse) Reset() {
 	*x = DeleteResponse{}
-	mi := &file_proto_kv_proto_msgTypes[9]
+	mi := &file_proto_kv_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -486,7 +572,7 @@ func (x *DeleteResponse) String() string {
 func (*DeleteResponse) ProtoMessage() {}
 
 func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_kv_proto_msgTypes[9]
+	mi := &file_proto_kv_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -499,7 +585,7 @@ func (x *DeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteResponse.ProtoReflect.Descriptor instead.
 func (*DeleteResponse) Descriptor() ([]byte, []int) {
-	return file_proto_kv_proto_rawDescGZIP(), []int{9}
+	return file_proto_kv_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *DeleteResponse) GetExists() bool {
@@ -507,6 +593,110 @@ func (x *DeleteResponse) GetExists() bool {
 		return x.Exists
 	}
 	return false
+}
+
+type RegisterResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PartitionId   int32                  `protobuf:"varint,1,opt,name=partition_id,json=partitionId,proto3" json:"partition_id,omitempty"`
+	Success       bool                   `protobuf:"varint,2,opt,name=success,proto3" json:"success,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegisterResponse) Reset() {
+	*x = RegisterResponse{}
+	mi := &file_proto_kv_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegisterResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegisterResponse) ProtoMessage() {}
+
+func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_kv_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegisterResponse.ProtoReflect.Descriptor instead.
+func (*RegisterResponse) Descriptor() ([]byte, []int) {
+	return file_proto_kv_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *RegisterResponse) GetPartitionId() int32 {
+	if x != nil {
+		return x.PartitionId
+	}
+	return 0
+}
+
+func (x *RegisterResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+type PartitionMapResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NumPartitions int32                  `protobuf:"varint,1,opt,name=num_partitions,json=numPartitions,proto3" json:"num_partitions,omitempty"`
+	PartitionMap  map[int32]string       `protobuf:"bytes,2,rep,name=partition_map,json=partitionMap,proto3" json:"partition_map,omitempty" protobuf_key:"varint,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PartitionMapResponse) Reset() {
+	*x = PartitionMapResponse{}
+	mi := &file_proto_kv_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PartitionMapResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PartitionMapResponse) ProtoMessage() {}
+
+func (x *PartitionMapResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_kv_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PartitionMapResponse.ProtoReflect.Descriptor instead.
+func (*PartitionMapResponse) Descriptor() ([]byte, []int) {
+	return file_proto_kv_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *PartitionMapResponse) GetNumPartitions() int32 {
+	if x != nil {
+		return x.NumPartitions
+	}
+	return 0
+}
+
+func (x *PartitionMapResponse) GetPartitionMap() map[int32]string {
+	if x != nil {
+		return x.PartitionMap
+	}
+	return nil
 }
 
 var File_proto_kv_proto protoreflect.FileDescriptor
@@ -528,7 +718,10 @@ const file_proto_kv_proto_rawDesc = "" +
 	"\tstart_key\x18\x01 \x01(\tR\bstartKey\x12\x17\n" +
 	"\aend_key\x18\x02 \x01(\tR\x06endKey\"!\n" +
 	"\rDeleteRequest\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\"4\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\".\n" +
+	"\x0fRegisterRequest\x12\x1b\n" +
+	"\tserver_id\x18\x01 \x01(\x05R\bserverId\"\x15\n" +
+	"\x13PartitionMapRequest\"4\n" +
 	"\vPutResponse\x12%\n" +
 	"\x0ealready_exists\x18\x01 \x01(\bR\ralreadyExists\"C\n" +
 	"\fSwapResponse\x12\x1b\n" +
@@ -541,13 +734,25 @@ const file_proto_kv_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\"(\n" +
 	"\x0eDeleteResponse\x12\x16\n" +
-	"\x06exists\x18\x01 \x01(\bR\x06exists2\xaa\x02\n" +
+	"\x06exists\x18\x01 \x01(\bR\x06exists\"O\n" +
+	"\x10RegisterResponse\x12!\n" +
+	"\fpartition_id\x18\x01 \x01(\x05R\vpartitionId\x12\x18\n" +
+	"\asuccess\x18\x02 \x01(\bR\asuccess\"\xd6\x01\n" +
+	"\x14PartitionMapResponse\x12%\n" +
+	"\x0enum_partitions\x18\x01 \x01(\x05R\rnumPartitions\x12V\n" +
+	"\rpartition_map\x18\x02 \x03(\v21.kvservice.PartitionMapResponse.PartitionMapEntryR\fpartitionMap\x1a?\n" +
+	"\x11PartitionMapEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\x05R\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012\xaa\x02\n" +
 	"\tKVService\x124\n" +
 	"\x03Put\x12\x15.kvservice.PutRequest\x1a\x16.kvservice.PutResponse\x127\n" +
 	"\x04Swap\x12\x16.kvservice.SwapRequest\x1a\x17.kvservice.SwapResponse\x124\n" +
 	"\x03Get\x12\x15.kvservice.GetRequest\x1a\x16.kvservice.GetResponse\x129\n" +
 	"\x04Scan\x12\x16.kvservice.ScanRequest\x1a\x17.kvservice.ScanResponse0\x01\x12=\n" +
-	"\x06Delete\x12\x18.kvservice.DeleteRequest\x1a\x19.kvservice.DeleteResponseB\x0fZ\rgo_grpc/protob\x06proto3"
+	"\x06Delete\x12\x18.kvservice.DeleteRequest\x1a\x19.kvservice.DeleteResponse2\xaf\x01\n" +
+	"\x0eClusterManager\x12I\n" +
+	"\x0eRegisterServer\x12\x1a.kvservice.RegisterRequest\x1a\x1b.kvservice.RegisterResponse\x12R\n" +
+	"\x0fGetPartitionMap\x12\x1e.kvservice.PartitionMapRequest\x1a\x1f.kvservice.PartitionMapResponseB\x0fZ\rgo_grpc/protob\x06proto3"
 
 var (
 	file_proto_kv_proto_rawDescOnce sync.Once
@@ -561,35 +766,45 @@ func file_proto_kv_proto_rawDescGZIP() []byte {
 	return file_proto_kv_proto_rawDescData
 }
 
-var file_proto_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_proto_kv_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_proto_kv_proto_goTypes = []any{
-	(*PutRequest)(nil),     // 0: kvservice.PutRequest
-	(*SwapRequest)(nil),    // 1: kvservice.SwapRequest
-	(*GetRequest)(nil),     // 2: kvservice.GetRequest
-	(*ScanRequest)(nil),    // 3: kvservice.ScanRequest
-	(*DeleteRequest)(nil),  // 4: kvservice.DeleteRequest
-	(*PutResponse)(nil),    // 5: kvservice.PutResponse
-	(*SwapResponse)(nil),   // 6: kvservice.SwapResponse
-	(*GetResponse)(nil),    // 7: kvservice.GetResponse
-	(*ScanResponse)(nil),   // 8: kvservice.ScanResponse
-	(*DeleteResponse)(nil), // 9: kvservice.DeleteResponse
+	(*PutRequest)(nil),           // 0: kvservice.PutRequest
+	(*SwapRequest)(nil),          // 1: kvservice.SwapRequest
+	(*GetRequest)(nil),           // 2: kvservice.GetRequest
+	(*ScanRequest)(nil),          // 3: kvservice.ScanRequest
+	(*DeleteRequest)(nil),        // 4: kvservice.DeleteRequest
+	(*RegisterRequest)(nil),      // 5: kvservice.RegisterRequest
+	(*PartitionMapRequest)(nil),  // 6: kvservice.PartitionMapRequest
+	(*PutResponse)(nil),          // 7: kvservice.PutResponse
+	(*SwapResponse)(nil),         // 8: kvservice.SwapResponse
+	(*GetResponse)(nil),          // 9: kvservice.GetResponse
+	(*ScanResponse)(nil),         // 10: kvservice.ScanResponse
+	(*DeleteResponse)(nil),       // 11: kvservice.DeleteResponse
+	(*RegisterResponse)(nil),     // 12: kvservice.RegisterResponse
+	(*PartitionMapResponse)(nil), // 13: kvservice.PartitionMapResponse
+	nil,                          // 14: kvservice.PartitionMapResponse.PartitionMapEntry
 }
 var file_proto_kv_proto_depIdxs = []int32{
-	0, // 0: kvservice.KVService.Put:input_type -> kvservice.PutRequest
-	1, // 1: kvservice.KVService.Swap:input_type -> kvservice.SwapRequest
-	2, // 2: kvservice.KVService.Get:input_type -> kvservice.GetRequest
-	3, // 3: kvservice.KVService.Scan:input_type -> kvservice.ScanRequest
-	4, // 4: kvservice.KVService.Delete:input_type -> kvservice.DeleteRequest
-	5, // 5: kvservice.KVService.Put:output_type -> kvservice.PutResponse
-	6, // 6: kvservice.KVService.Swap:output_type -> kvservice.SwapResponse
-	7, // 7: kvservice.KVService.Get:output_type -> kvservice.GetResponse
-	8, // 8: kvservice.KVService.Scan:output_type -> kvservice.ScanResponse
-	9, // 9: kvservice.KVService.Delete:output_type -> kvservice.DeleteResponse
-	5, // [5:10] is the sub-list for method output_type
-	0, // [0:5] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	14, // 0: kvservice.PartitionMapResponse.partition_map:type_name -> kvservice.PartitionMapResponse.PartitionMapEntry
+	0,  // 1: kvservice.KVService.Put:input_type -> kvservice.PutRequest
+	1,  // 2: kvservice.KVService.Swap:input_type -> kvservice.SwapRequest
+	2,  // 3: kvservice.KVService.Get:input_type -> kvservice.GetRequest
+	3,  // 4: kvservice.KVService.Scan:input_type -> kvservice.ScanRequest
+	4,  // 5: kvservice.KVService.Delete:input_type -> kvservice.DeleteRequest
+	5,  // 6: kvservice.ClusterManager.RegisterServer:input_type -> kvservice.RegisterRequest
+	6,  // 7: kvservice.ClusterManager.GetPartitionMap:input_type -> kvservice.PartitionMapRequest
+	7,  // 8: kvservice.KVService.Put:output_type -> kvservice.PutResponse
+	8,  // 9: kvservice.KVService.Swap:output_type -> kvservice.SwapResponse
+	9,  // 10: kvservice.KVService.Get:output_type -> kvservice.GetResponse
+	10, // 11: kvservice.KVService.Scan:output_type -> kvservice.ScanResponse
+	11, // 12: kvservice.KVService.Delete:output_type -> kvservice.DeleteResponse
+	12, // 13: kvservice.ClusterManager.RegisterServer:output_type -> kvservice.RegisterResponse
+	13, // 14: kvservice.ClusterManager.GetPartitionMap:output_type -> kvservice.PartitionMapResponse
+	8,  // [8:15] is the sub-list for method output_type
+	1,  // [1:8] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_proto_kv_proto_init() }
@@ -603,9 +818,9 @@ func file_proto_kv_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_kv_proto_rawDesc), len(file_proto_kv_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   15,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_proto_kv_proto_goTypes,
 		DependencyIndexes: file_proto_kv_proto_depIdxs,

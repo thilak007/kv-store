@@ -29,6 +29,10 @@ const (
 // KVServiceClient is the client API for KVService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// -----------------------------
+// Service
+// -----------------------------
 type KVServiceClient interface {
 	Put(ctx context.Context, in *PutRequest, opts ...grpc.CallOption) (*PutResponse, error)
 	Swap(ctx context.Context, in *SwapRequest, opts ...grpc.CallOption) (*SwapResponse, error)
@@ -107,6 +111,10 @@ func (c *kVServiceClient) Delete(ctx context.Context, in *DeleteRequest, opts ..
 // KVServiceServer is the server API for KVService service.
 // All implementations must embed UnimplementedKVServiceServer
 // for forward compatibility.
+//
+// -----------------------------
+// Service
+// -----------------------------
 type KVServiceServer interface {
 	Put(context.Context, *PutRequest) (*PutResponse, error)
 	Swap(context.Context, *SwapRequest) (*SwapResponse, error)
@@ -273,5 +281,145 @@ var KVService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
+	Metadata: "proto/kv.proto",
+}
+
+const (
+	ClusterManager_RegisterServer_FullMethodName  = "/kvservice.ClusterManager/RegisterServer"
+	ClusterManager_GetPartitionMap_FullMethodName = "/kvservice.ClusterManager/GetPartitionMap"
+)
+
+// ClusterManagerClient is the client API for ClusterManager service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type ClusterManagerClient interface {
+	RegisterServer(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterResponse, error)
+	GetPartitionMap(ctx context.Context, in *PartitionMapRequest, opts ...grpc.CallOption) (*PartitionMapResponse, error)
+}
+
+type clusterManagerClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewClusterManagerClient(cc grpc.ClientConnInterface) ClusterManagerClient {
+	return &clusterManagerClient{cc}
+}
+
+func (c *clusterManagerClient) RegisterServer(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RegisterResponse)
+	err := c.cc.Invoke(ctx, ClusterManager_RegisterServer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *clusterManagerClient) GetPartitionMap(ctx context.Context, in *PartitionMapRequest, opts ...grpc.CallOption) (*PartitionMapResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PartitionMapResponse)
+	err := c.cc.Invoke(ctx, ClusterManager_GetPartitionMap_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ClusterManagerServer is the server API for ClusterManager service.
+// All implementations must embed UnimplementedClusterManagerServer
+// for forward compatibility.
+type ClusterManagerServer interface {
+	RegisterServer(context.Context, *RegisterRequest) (*RegisterResponse, error)
+	GetPartitionMap(context.Context, *PartitionMapRequest) (*PartitionMapResponse, error)
+	mustEmbedUnimplementedClusterManagerServer()
+}
+
+// UnimplementedClusterManagerServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedClusterManagerServer struct{}
+
+func (UnimplementedClusterManagerServer) RegisterServer(context.Context, *RegisterRequest) (*RegisterResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RegisterServer not implemented")
+}
+func (UnimplementedClusterManagerServer) GetPartitionMap(context.Context, *PartitionMapRequest) (*PartitionMapResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetPartitionMap not implemented")
+}
+func (UnimplementedClusterManagerServer) mustEmbedUnimplementedClusterManagerServer() {}
+func (UnimplementedClusterManagerServer) testEmbeddedByValue()                        {}
+
+// UnsafeClusterManagerServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to ClusterManagerServer will
+// result in compilation errors.
+type UnsafeClusterManagerServer interface {
+	mustEmbedUnimplementedClusterManagerServer()
+}
+
+func RegisterClusterManagerServer(s grpc.ServiceRegistrar, srv ClusterManagerServer) {
+	// If the following call panics, it indicates UnimplementedClusterManagerServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&ClusterManager_ServiceDesc, srv)
+}
+
+func _ClusterManager_RegisterServer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClusterManagerServer).RegisterServer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ClusterManager_RegisterServer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClusterManagerServer).RegisterServer(ctx, req.(*RegisterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ClusterManager_GetPartitionMap_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PartitionMapRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClusterManagerServer).GetPartitionMap(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ClusterManager_GetPartitionMap_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClusterManagerServer).GetPartitionMap(ctx, req.(*PartitionMapRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// ClusterManager_ServiceDesc is the grpc.ServiceDesc for ClusterManager service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var ClusterManager_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "kvservice.ClusterManager",
+	HandlerType: (*ClusterManagerServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "RegisterServer",
+			Handler:    _ClusterManager_RegisterServer_Handler,
+		},
+		{
+			MethodName: "GetPartitionMap",
+			Handler:    _ClusterManager_GetPartitionMap_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
 	Metadata: "proto/kv.proto",
 }
