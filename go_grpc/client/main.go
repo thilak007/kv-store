@@ -18,8 +18,8 @@ import (
 )
 
 func handlePut(client pb.KVServiceClient, key, value string) {
-	retryDelay := 1 * time.Second
-	attempt := 0
+	attempt := 1
+	retryDelay := time.Duration(2*attempt) * time.Second
 
 	req := &pb.PutRequest{
 		Key:   key,
@@ -28,7 +28,7 @@ func handlePut(client pb.KVServiceClient, key, value string) {
 
 	for {
 		attempt++
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 
 		res, err := client.Put(ctx, req)
 		cancel()
@@ -48,14 +48,14 @@ func handlePut(client pb.KVServiceClient, key, value string) {
 }
 
 func handleGet(client pb.KVServiceClient, key string) {
-	retryDelay := 1 * time.Second
-	attempt := 0
+	attempt := 1
+	retryDelay := time.Duration(2*attempt) * time.Second
 
 	req := &pb.GetRequest{Key: key}
 
 	for {
 		attempt++
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 
 		res, err := client.Get(ctx, req)
 		cancel()
@@ -74,8 +74,8 @@ func handleGet(client pb.KVServiceClient, key string) {
 }
 
 func handleSwap(client pb.KVServiceClient, key, value string) {
-	retryDelay := 1 * time.Second
-	attempt := 0
+	attempt := 1
+	retryDelay := time.Duration(2*attempt) * time.Second
 
 	req := &pb.SwapRequest{
 		Key:   key,
@@ -84,7 +84,7 @@ func handleSwap(client pb.KVServiceClient, key, value string) {
 
 	for {
 		attempt++
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 
 		res, err := client.Swap(ctx, req)
 		cancel()
@@ -104,8 +104,8 @@ func handleSwap(client pb.KVServiceClient, key, value string) {
 }
 
 func handleScan(serverClients map[string]pb.KVServiceClient, startKey, endKey string) {
-	retryDelay := 1 * time.Second
-	attempt := 0
+	attempt := 1
+	retryDelay := time.Duration(2*attempt) * time.Second
 
 	req := &pb.ScanRequest{
 		StartKey: startKey,
@@ -117,7 +117,7 @@ func handleScan(serverClients map[string]pb.KVServiceClient, startKey, endKey st
 		allResp := make(map[string]string)
 		allSucceeded := true
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 
 		// Query all servers
 		for serverAddr, client := range serverClients {
@@ -176,14 +176,14 @@ func handleScan(serverClients map[string]pb.KVServiceClient, startKey, endKey st
 }
 
 func handleDelete(client pb.KVServiceClient, key string) {
-	retryDelay := 1 * time.Second
-	attempt := 0
+	attempt := 1
+	retryDelay := time.Duration(2*attempt) * time.Second
 
 	req := &pb.DeleteRequest{Key: key}
 
 	for {
 		attempt++
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 
 		res, err := client.Delete(ctx, req)
 		cancel()
@@ -206,8 +206,8 @@ func getPartitionMap(ManagerAddr string) (int32, map[int32]string) {
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 
-	retryDelay := 2 * time.Second
-	attempt := 0
+	attempt := 1
+	retryDelay := time.Duration(2*attempt) * time.Second
 
 	for {
 		attempt++
@@ -283,7 +283,7 @@ func main() {
 
 	for _, serverAddr := range partitionMap {
 		conn, client := connectToServer(serverAddr)
-		serverClients[serverAddr] = client
+		serverClients[serverAddr] = client // Store client object for making RPC calls
 		serverConns[serverAddr] = conn
 	}
 	defer func() {
