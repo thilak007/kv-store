@@ -32,9 +32,10 @@ client manager="127.0.0.1:3666":
 
 # kill all processes of your KV store system
 kill:
-    -pkill -f server > /dev/null 2>&1
-    -pkill -f client > /dev/null 2>&1
-    -pkill -f manager > /dev/null 2>&1
+    -pkill -f './bin/server' > /dev/null 2>&1
+    -pkill -f './bin/client' > /dev/null 2>&1
+    -pkill -f './bin/manager' > /dev/null 2>&1
+    rm -rf ./backer.*
 
 # NOTE: feel free to add more recipes as you see fit...
 #       also feel free to add extra parameters to the recipes as you see fit,
@@ -62,7 +63,7 @@ allservice manager="127.0.0.1:3666" servers="127.0.0.1:3777,127.0.0.1:3778,127.0
     #!/usr/bin/env bash
     IFS=',' read -ra ADDRS <<< "{{servers}}"
     for i in "${!ADDRS[@]}"; do
-        just p2::service node="s$i" manager="{{manager}}" servers="{{servers}}" backer_prefix="{{backer_prefix}}" &
+        just p2::service "s$i" "{{manager}}" "{{servers}}" "{{backer_prefix}}" &
     done
     wait
 
