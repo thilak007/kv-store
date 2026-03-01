@@ -133,9 +133,9 @@ func handleSingeServerScan(serverAddr string, client pb.KVServiceClient, startKe
 	// return nil, fmt.Errorf("scan failed after all retries")
 }
 
-func isAllServerScansComplete(mp map[string]bool) (bool){
-	for _, v := mp{
-		if (!v){
+func isAllServerScansComplete(mp map[string]bool) bool {
+	for _, v := range mp {
+		if !v {
 			return false
 		}
 	}
@@ -179,19 +179,19 @@ func handleScan(serverClients map[string]pb.KVServiceClient, startKey, endKey st
 	}
 
 	fmt.Printf("SCAN %s %s BEGIN\n", startKey, endKey)
-	
+
 	// Extract and sort keys
 	var keys []string
 	for key := range allResp {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	
+
 	// Print results
 	for _, key := range keys {
 		fmt.Printf("  %s %s\n", key, allResp[key])
 	}
-	
+
 	fmt.Println("SCAN END")
 	return
 }
