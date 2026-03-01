@@ -59,6 +59,7 @@ service node="s0" manager="127.0.0.1:3666" servers="127.0.0.1:3777,127.0.0.1:377
             "{{servers}}" \
         --node-id "{{node}}"
 
+# launch all the KV servers 
 allservice manager="127.0.0.1:3666" servers="127.0.0.1:3777,127.0.0.1:3778,127.0.0.1:3779" backer_prefix="./backer":
     #!/usr/bin/env bash
     IFS=',' read -ra ADDRS <<< "{{servers}}"
@@ -66,6 +67,19 @@ allservice manager="127.0.0.1:3666" servers="127.0.0.1:3777,127.0.0.1:3778,127.0
         just p2::service "s$i" "{{manager}}" "{{servers}}" "{{backer_prefix}}" &
     done
     wait
+
+setupcluster nservers="1":
+    #!/usr/bin/env bash
+    servers=""
+    for i in $(seq 0 $(({{nservers}} - 1))); do
+        port=$((3777 + i))
+        if [ $i -gt 0 ]; then
+            servers="${servers},"
+        fi
+        servers="${servers}127.0.0.1:${port}"
+    done
+    just p2::manager man_port="3666" servers="$servers" &
+    just p2::allservice "127.0.0.1:3666" "$servers"
 
 # ensure a subdir under 'tmp/' exists
 tmpdir subdir:
