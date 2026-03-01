@@ -103,7 +103,7 @@ func handleSwap(client pb.KVServiceClient, key, value string) {
 	}
 }
 
-func handleScan(serverClients map[string]pb.KVServiceClient, startKey, endKey string) {
+func handleSingeServerScan(serverAddr string, client pb.KVServiceClient, startKey, endKey string) (pb.KVService_ScanClient, error) {
 	attempt := 1
 	retryDelay := time.Duration(2*attempt) * time.Second
 
@@ -112,21 +112,55 @@ func handleScan(serverClients map[string]pb.KVServiceClient, startKey, endKey st
 		EndKey:   endKey,
 	}
 
+	// TODO: Should we have a outer timeout of 15minutes and return gracefully instead of indefinite retires?
 	for {
 		attempt++
-		allResp := make(map[string]string)
-		allSucceeded := true
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute) // 5 Minute timeout for each request.
+		res, err := client.Scan(ctx, req)
+		cancel()
 
-		// Query all servers
+		if err != nil {
+			// Failed - retry
+			log.Printf("SCAN error from %s (attempt %d): %v.  Retrying in %v..", serverAddr, attempt, err, retryDelay)
+			time.Sleep(retryDelay)
+			continue
+		}
+
+		return res, err
+	}
+
+	// return nil, fmt.Errorf("scan failed after all retries")
+}
+
+func isAllServerScansComplete(mp map[string]bool) (bool){
+	for _, v := mp{
+		if (!v){
+			return false
+		}
+	}
+	return true
+}
+
+func handleScan(serverClients map[string]pb.KVServiceClient, startKey, endKey string) {
+
+	allResp := make(map[string]string)
+	allSucceeded := make(map[string]bool)
+
+	for serverAddr, _ := range serverClients {
+		allSucceeded[serverAddr] = false
+	}
+
+	for !isAllServerScansComplete(allSucceeded) {
+		// Query all servers whose scan request hasn't completed successfully.
 		for serverAddr, client := range serverClients {
-			res, err := client.Scan(ctx, req)
-			if err != nil {
-				log.Printf("SCAN error from %s (attempt %d): %v", serverAddr, attempt, err)
-				allSucceeded = false
-				break
+
+			if allSucceeded[serverAddr] {
+				continue
 			}
+
+			res, _ := handleSingeServerScan(serverAddr, client, startKey, endKey)
+			allSucceeded[serverAddr] = true
 
 			// Receive all results from this server
 			for {
@@ -135,44 +169,31 @@ func handleScan(serverClients map[string]pb.KVServiceClient, startKey, endKey st
 					break
 				}
 				if err != nil {
-					log.Printf("SCAN recv error from %s (attempt %d): %v", serverAddr, attempt, err)
-					allSucceeded = false
+					log.Printf("SCAN recv error from %s: %v", serverAddr, err)
+					allSucceeded[serverAddr] = false
 					break
 				}
 				allResp[kv.Key] = kv.Value
 			}
-
-			if !allSucceeded {
-				break
-			}
 		}
-
-		cancel()
-
-		// If all servers succeeded, return results
-		if allSucceeded {
-			fmt.Printf("SCAN %s %s BEGIN\n", startKey, endKey)
-
-			// Extract and sort keys
-			var keys []string
-			for key := range allResp {
-				keys = append(keys, key)
-			}
-			sort.Strings(keys)
-
-			// Print results
-			for _, key := range keys {
-				fmt.Printf("  %s %s\n", key, allResp[key])
-			}
-
-			fmt.Println("SCAN END")
-			return
-		}
-
-		// Failed - retry
-		log.Printf("SCAN failed (attempt %d). Retrying in %v...", attempt, retryDelay)
-		time.Sleep(retryDelay)
 	}
+
+	fmt.Printf("SCAN %s %s BEGIN\n", startKey, endKey)
+	
+	// Extract and sort keys
+	var keys []string
+	for key := range allResp {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	
+	// Print results
+	for _, key := range keys {
+		fmt.Printf("  %s %s\n", key, allResp[key])
+	}
+	
+	fmt.Println("SCAN END")
+	return
 }
 
 func handleDelete(client pb.KVServiceClient, key string) {
