@@ -6,15 +6,17 @@ default:
 
 # install extra dependencies of your KV code
 deps:
-    # FIXME: your dependency installation commands here
+    cd go_grpc && go mod tidy
 
 # build your executables in release mode
-build:
-    # FIXME: your build commands here (don't include clean)
+build: deps
+    cd go_grpc/server && go build -o ../../bin/server main.go
+    cd go_grpc/client && go build -o ../../bin/client main.go
+    cd go_grpc/manager && go build -o ../../bin/manager main.go
 
 # clean the build of your executables
 clean:
-    # FIXME: your clean commands here
+    rm -rf bin/
 
 # run your KV store manager
 manager man_port="3666" servers="127.0.0.1:3777,127.0.0.1:3778,127.0.0.1:3779":

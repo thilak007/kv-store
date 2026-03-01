@@ -146,6 +146,7 @@ func handleSingeServerScan(serverAddr string, client pb.KVServiceClient, startKe
 		// Receive all results from this server
 		for {
 			kv, err := res.Recv()
+			fmt.Println(kv, err)
 			if err == io.EOF {
 				break
 			}
