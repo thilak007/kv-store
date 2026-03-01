@@ -115,17 +115,20 @@ func handleSwap(client pb.KVServiceClient, key, value string) {
 	}
 }
 
-func handleSingeServerScan(serverAddr string, client pb.KVServiceClient, startKey, endKey string) (pb.KVService_ScanClient, error) {
+func handleSingeServerScan(serverAddr string, client pb.KVServiceClient, startKey, endKey string) (map[string]string, error) {
 	attempt := 1
 	retryDelay := time.Duration(2*attempt) * time.Second
+	var kvPairs map[string]string
 
 	req := &pb.ScanRequest{
 		StartKey: startKey,
 		EndKey:   endKey,
 	}
 
+	isSuccess := false
+
 	// TODO: Should we have a outer timeout of 15minutes and return gracefully instead of indefinite retires?
-	for {
+	for !isSuccess {
 		attempt++
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute) // 5 Minute timeout for each request.
@@ -138,11 +141,26 @@ func handleSingeServerScan(serverAddr string, client pb.KVServiceClient, startKe
 			time.Sleep(retryDelay)
 			continue
 		}
+		kvPairs = map[string]string{}
 
-		return res, err
+		// Receive all results from this server
+		for {
+			kv, err := res.Recv()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				log.Printf("SCAN streaming error (recv) from %s (attempt %d): %v. Retrying in %v..", serverAddr, attempt, err, retryDelay)
+				time.Sleep(retryDelay)
+				break
+			}
+			kvPairs[kv.Key] = kv.Value
+		}
+		isSuccess = true
+		return kvPairs, err
 	}
 
-	// return nil, fmt.Errorf("scan failed after all retries")
+	return nil, fmt.Errorf("scan failed after all retries")
 }
 
 func isAllServerScansComplete(mp map[string]bool) bool {
@@ -171,22 +189,18 @@ func handleScan(serverClients map[string]pb.KVServiceClient, startKey, endKey st
 				continue
 			}
 
-			res, _ := handleSingeServerScan(serverAddr, client, startKey, endKey)
+			respKVPairs, err := handleSingeServerScan(serverAddr, client, startKey, endKey)
+
+			if err != nil {
+				allSucceeded[serverAddr] = false
+				break
+			}
 			allSucceeded[serverAddr] = true
 
-			// Receive all results from this server
-			for {
-				kv, err := res.Recv()
-				if err == io.EOF {
-					break
-				}
-				if err != nil {
-					log.Printf("SCAN recv error from %s: %v", serverAddr, err)
-					allSucceeded[serverAddr] = false
-					break
-				}
-				allResp[kv.Key] = kv.Value
+			for key, value := range respKVPairs {
+				allResp[key] = value
 			}
+
 		}
 	}
 
