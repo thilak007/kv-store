@@ -133,9 +133,10 @@ func handleSingeServerScan(serverAddr string, client pb.KVServiceClient, startKe
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute) // 5 Minute timeout for each request.
 		res, err := client.Scan(ctx, req)
-		cancel()
+		defer cancel()
 
 		if err != nil {
+			cancel()
 			// Failed - retry
 			log.Printf("SCAN error from %s (attempt %d): %v.  Retrying in %v..", serverAddr, attempt, err, retryDelay)
 			time.Sleep(retryDelay)
@@ -146,11 +147,11 @@ func handleSingeServerScan(serverAddr string, client pb.KVServiceClient, startKe
 		// Receive all results from this server
 		for {
 			kv, err := res.Recv()
-			fmt.Println(kv, err)
 			if err == io.EOF {
 				break
 			}
 			if err != nil {
+				cancel()
 				log.Printf("SCAN streaming error (recv) from %s (attempt %d): %v. Retrying in %v..", serverAddr, attempt, err, retryDelay)
 				time.Sleep(retryDelay)
 				break
