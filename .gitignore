@@ -35,4 +35,8 @@ ycsb/
 backer.*/
 .remotes
 
-bin/*
+bin/
+
+
+logs/
+data/

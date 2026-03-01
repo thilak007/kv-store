@@ -1,0 +1,7 @@
+GET key0
+GET key1
+GET key3
+GET key5
+GET key6
+GET key8
+STOP

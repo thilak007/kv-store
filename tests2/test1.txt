@@ -1,0 +1,13 @@
+PUT key0 value0
+PUT key1 value1
+PUT key2 value2
+PUT key3 value3
+PUT key4 value4
+PUT key5 value5
+PUT key6 value6
+PUT key7 value7
+PUT key8 value8
+SWAP key0 swapped0
+SWAP key3 swapped3
+SWAP key6 swapped6
+STOP

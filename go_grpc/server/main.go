@@ -57,12 +57,14 @@ func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, e
 
 	if err != nil {
 		log.Printf("[ReqID: %d] Failed to persist PUT to BoltDB: %v", reqID, err)
+		return nil, err
 	}
 
 	// Update in-memory map
 	records[key] = value
 
-	log.Printf("[ReqID: %d] Sent PUT from %s for key: %s and value: %s. AlreadyExists: %t", reqID, p.Addr.String(), in.Key, in.Value, exists)
+	log.Printf("[ReqID: %d] Sent PUT from %s for key: %s and value: %s. AlreadyExists: %t",
+		reqID, p.Addr.String(), in.Key, in.Value, exists)
 
 	return &pb.PutResponse{
 		AlreadyExists: exists,
@@ -90,7 +92,7 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 
 	if err != nil {
 		log.Printf("[ReqID: %d] Failed to persist SWAP to BoltDB: %v", reqID, err)
-		// todo: return error response if db failed (do for all)
+		return nil, err
 	}
 
 	records[key] = newvalue
@@ -172,9 +174,6 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 
 	key := in.Key
 	_, exists := records[key]
-	if exists {
-		delete(records, key)
-	}
 
 	// Persist to BoltDB
 	err := s.db.Update(func(tx *bolt.Tx) error {
@@ -184,6 +183,11 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 
 	if err != nil {
 		log.Printf("[ReqID: %d] Failed to persist DELETE to BoltDB: %v", reqID, err)
+		return nil, err
+	}
+
+	if exists {
+		delete(records, key)
 	}
 
 	log.Printf("[ReqID: %d] Sent DELETE from %s for key: %s. Exists: %t", reqID, p.Addr.String(), in.Key, exists)

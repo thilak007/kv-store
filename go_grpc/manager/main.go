@@ -59,7 +59,7 @@ func (m *manager) GetPartitionMap(ctx context.Context, in *pb.PartitionMapReques
 	mu.RLock()
 	defer mu.RUnlock()
 
-	p, ok := peer.FromContext(ctx)
+	_, ok := peer.FromContext(ctx)
 
 	if ok {
 		log.Printf("[ReqID: %d] Returning PartitionMap to client(s)", reqID)

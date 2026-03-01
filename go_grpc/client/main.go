@@ -18,8 +18,8 @@ import (
 )
 
 func handlePut(client pb.KVServiceClient, key, value string) {
-	attempt := 1
-	retryDelay := time.Duration(2*attempt) * time.Second
+	attempt := 0
+	maxDelay := 30 * time.Second
 
 	req := &pb.PutRequest{
 		Key:   key,
@@ -28,6 +28,10 @@ func handlePut(client pb.KVServiceClient, key, value string) {
 
 	for {
 		attempt++
+		retryDelay := time.Duration(2*attempt) * time.Second
+		if retryDelay > maxDelay {
+			retryDelay = maxDelay
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 
 		res, err := client.Put(ctx, req)
@@ -48,13 +52,17 @@ func handlePut(client pb.KVServiceClient, key, value string) {
 }
 
 func handleGet(client pb.KVServiceClient, key string) {
-	attempt := 1
-	retryDelay := time.Duration(2*attempt) * time.Second
+	attempt := 0
+	maxDelay := 30 * time.Second
 
 	req := &pb.GetRequest{Key: key}
 
 	for {
 		attempt++
+		retryDelay := time.Duration(2*attempt) * time.Second
+		if retryDelay > maxDelay {
+			retryDelay = maxDelay
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 
 		res, err := client.Get(ctx, req)
@@ -74,8 +82,8 @@ func handleGet(client pb.KVServiceClient, key string) {
 }
 
 func handleSwap(client pb.KVServiceClient, key, value string) {
-	attempt := 1
-	retryDelay := time.Duration(2*attempt) * time.Second
+	attempt := 0
+	maxDelay := 30 * time.Second
 
 	req := &pb.SwapRequest{
 		Key:   key,
@@ -84,6 +92,10 @@ func handleSwap(client pb.KVServiceClient, key, value string) {
 
 	for {
 		attempt++
+		retryDelay := time.Duration(2*attempt) * time.Second
+		if retryDelay > maxDelay {
+			retryDelay = maxDelay
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 
 		res, err := client.Swap(ctx, req)
@@ -197,13 +209,17 @@ func handleScan(serverClients map[string]pb.KVServiceClient, startKey, endKey st
 }
 
 func handleDelete(client pb.KVServiceClient, key string) {
-	attempt := 1
-	retryDelay := time.Duration(2*attempt) * time.Second
+	attempt := 0
+	maxDelay := 30 * time.Second
 
 	req := &pb.DeleteRequest{Key: key}
 
 	for {
 		attempt++
+		retryDelay := time.Duration(2*attempt) * time.Second
+		if retryDelay > maxDelay {
+			retryDelay = maxDelay
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 
 		res, err := client.Delete(ctx, req)
@@ -241,7 +257,7 @@ func getPartitionMap(ManagerAddr string) (int32, map[int32]string) {
 			continue
 		}
 
-		managerClient := pb.NewClusterManagerClient(managerConn, opts)
+		managerClient := pb.NewClusterManagerClient(managerConn)
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		res, err := managerClient.GetPartitionMap(ctx, &pb.PartitionMapRequest{})
 
