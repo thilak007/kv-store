@@ -58,6 +58,14 @@ service node="s0" manager="127.0.0.1:3666" servers="127.0.0.1:3777,127.0.0.1:377
             "{{servers}}" \
         --node-id "{{node}}"
 
+allservice manager="127.0.0.1:3666" servers="127.0.0.1:3777,127.0.0.1:3778,127.0.0.1:3779" backer_prefix="./backer":
+    #!/usr/bin/env bash
+    IFS=',' read -ra ADDRS <<< "{{servers}}"
+    for i in "${!ADDRS[@]}"; do
+        just p2::service node="s$i" manager="{{manager}}" servers="{{servers}}" backer_prefix="{{backer_prefix}}" &
+    done
+    wait
+
 # ensure a subdir under 'tmp/' exists
 tmpdir subdir:
     mkdir -p "{{tmpdir_prefix}}/{{subdir}}"
