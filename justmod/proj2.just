@@ -78,7 +78,7 @@ setupcluster nservers="1":
         fi
         servers="${servers}127.0.0.1:${port}"
     done
-    just p2::manager man_port="3666" servers="$servers" &
+    just p2::manager "3666" "$servers" &
     just p2::allservice "127.0.0.1:3666" "$servers"
 
 # ensure a subdir under 'tmp/' exists
