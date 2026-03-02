@@ -20,11 +20,11 @@ clean:
 
 # run your KV store manager
 manager man_port="3666" servers="127.0.0.1:3777,127.0.0.1:3778,127.0.0.1:3779":
-    ./bin/manager {{man_port}} "{{servers}}"
+    ./bin/manager 0.0.0.0:{{man_port}} "{{servers}}"
 
 # run your KV store server
 server id="0" manager="127.0.0.1:3666" api_port="3777" backer_path="./backer.s0":
-    ./bin/server {{manager}} {{api_port}} {{id}} {{backer_path}}
+    ./bin/server {{manager}} 127.0.0.1:{{api_port}} {{id}} {{backer_path}}
 
 # run you KV store client in stdin/out interface mode
 client manager="127.0.0.1:3666":

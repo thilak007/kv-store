@@ -295,6 +295,7 @@ func main() {
 	}
 	log.Printf("Loaded %d key-value pairs from persistent storage", len(records))
 
+	fmt.Printf("Server listening on %s\n", listenAddr)
 	lis, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
