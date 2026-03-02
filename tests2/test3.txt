@@ -4,4 +4,6 @@ GET key3
 GET key5
 GET key6
 GET key8
+SCAN key0 key0
+SCAN key3 key3
 STOP

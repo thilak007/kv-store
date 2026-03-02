@@ -20,30 +20,21 @@ clean:
 
 # run your KV store manager
 manager man_port="3666" servers="127.0.0.1:3777,127.0.0.1:3778,127.0.0.1:3779":
-    # FIXME: your manager run command here, listening on 0.0.0.0:man_port for
-    #        both server and client registration requests
+    ./bin/manager {{man_port}} "{{servers}}"
 
 # run your KV store server
 server id="0" manager="127.0.0.1:3666" api_port="3777" backer_path="./backer.s0":
-    # FIXME: your server run command here. The server should first contact the
-    #        manager to get its assignment of key range(s). It then listens on
-    #        0.0.0.0:api_port for new clients, and stores all durable state
-    #        under backer_path
+    ./bin/server {{manager}} {{api_port}} {{id}} {{backer_path}}
 
 # run you KV store client in stdin/out interface mode
 client manager="127.0.0.1:3666":
-    # FIXME: your client run command here, querying manager at addr for server
-    #        registration information
+    ./bin/client {{manager}}
 
 # kill all processes of your KV store system
 kill:
-    # FIXME: your kill commands here
-    #        make sure that it kills all server, clients, and any extra helper
-    #        processes of your system; redirecting both out & err to /dev/null
-    #        is recommended
-    #   TIP: commands such as 'pkill' may return non-zero exit code on success,
-    #        which would by default abort the 'just' recipe early; prepend the
-    #        command with a '-' sign to ignore its exit code
+    -pkill -f server > /dev/null 2>&1
+    -pkill -f client > /dev/null 2>&1
+    -pkill -f manager > /dev/null 2>&1
 
 # NOTE: feel free to add more recipes as you see fit...
 #       also feel free to add extra parameters to the recipes as you see fit,

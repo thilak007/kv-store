@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "=== Partition Failure Test ==="
+echo "=== Custom Test ==="
 mkdir -p ./data/server0 ./data/server1 ./data/server2 logs
 
 # Step 1: Start cluster

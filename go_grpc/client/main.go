@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	pb "go_grpc/proto"
-	"hash/fnv"
 	"io"
 	"log"
 	"os"
@@ -16,6 +15,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
+
+// global partition configuration (set in main)
+var numPartitions int32
+var partitionMap map[int32]string
 
 func handlePut(client pb.KVServiceClient, key, value string) {
 	attempt := 0
@@ -176,16 +179,25 @@ func isAllServerScansComplete(mp map[string]bool) bool {
 
 func handleScan(serverClients map[string]pb.KVServiceClient, startKey, endKey string) {
 
+	// determine which partitions actually need scanning
+	startPid := hashKey(startKey) // Start server ID
+	endPid := hashKey(endKey)     // End server ID
+
 	allResp := make(map[string]string)
 	allSucceeded := make(map[string]bool)
 
-	for serverAddr, _ := range serverClients {
-		allSucceeded[serverAddr] = false
+	// build a reduced client set containing only the relevant servers
+	relevantClients := make(map[string]pb.KVServiceClient)
+	for i := startPid; i <= endPid; i++ {
+		if addr, ok := partitionMap[i]; ok {
+			relevantClients[addr] = serverClients[addr]
+			allSucceeded[addr] = false
+		}
 	}
 
 	for !isAllServerScansComplete(allSucceeded) {
 		// Query all servers whose scan request hasn't completed successfully.
-		for serverAddr, client := range serverClients {
+		for serverAddr, client := range relevantClients {
 
 			if allSucceeded[serverAddr] {
 				continue
@@ -315,10 +327,29 @@ func connectToServer(serverAddr string) (*grpc.ClientConn, pb.KVServiceClient) {
 	}
 }
 
-func hashKey(key string, numPartitions int32) int32 {
-	h := fnv.New32a()
-	h.Write([]byte(key))
-	return int32(h.Sum32()) % numPartitions
+func hashKey(key string) int32 {
+	// Range partitioning based solely on the first character of the key.
+	// We assume the first char is always alphanumeric (0-9, A-Z, a-z), so we
+	// map it into a dense range [0,62) and then scale that into the number of
+	// partitions.  This ignores any trailing characters entirely.
+	if len(key) == 0 {
+		return 0
+	}
+	c := key[0]
+	var idx int32
+	switch {
+	case '0' <= c && c <= '9':
+		idx = int32(c - '0') // 0..9
+	case 'A' <= c && c <= 'Z':
+		idx = int32(c-'A') + 10 // 10..35
+	case 'a' <= c && c <= 'z':
+		idx = int32(c-'a') + 36 // 36..61
+	default:
+		// should not happen, but fall back to 0
+		idx = 0
+	}
+	// scale idx∈[0,62) into [0,numPartitions). multiply before divide
+	return (idx * numPartitions) / 62
 }
 
 func main() {
@@ -328,7 +359,7 @@ func main() {
 
 	// Get partition map from Manager
 	managerAddr := os.Args[1]
-	numPartitions, partitionMap := getPartitionMap(managerAddr)
+	numPartitions, partitionMap = getPartitionMap(managerAddr)
 
 	// Connect to all servers
 	serverClients := make(map[string]pb.KVServiceClient)
@@ -367,7 +398,7 @@ func main() {
 			handleScan(serverClients, args[1], args[2])
 		default:
 			key := args[1]
-			partitionId := hashKey(key, numPartitions)
+			partitionId := hashKey(key)
 			serverAddr := partitionMap[partitionId]
 			client := serverClients[serverAddr]
 
