@@ -68,7 +68,7 @@ allservice manager="127.0.0.1:3666" servers="127.0.0.1:3777,127.0.0.1:3778,127.0
     done
     wait
 
-setupcluster nservers="1":
+setupcluster nservers="1": serverip="127.0.0.1"
     #!/usr/bin/env bash
     servers=""
     for i in $(seq 0 $(({{nservers}} - 1))); do
@@ -76,10 +76,10 @@ setupcluster nservers="1":
         if [ $i -gt 0 ]; then
             servers="${servers},"
         fi
-        servers="${servers}127.0.0.1:${port}"
+        servers="${servers}{{serverip}}:${port}"
     done
     just p2::manager "3666" "$servers" &
-    just p2::allservice "127.0.0.1:3666" "$servers"
+    just p2::allservice "{{serverip}}:3666" "$servers"
 
 # ensure a subdir under 'tmp/' exists
 tmpdir subdir:

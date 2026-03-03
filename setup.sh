@@ -22,8 +22,8 @@ cargo install just
 sudo apt install golang-1.23-go
 
 echo 'export PATH=$PATH:/usr/lib/go-1.23/bin' >> ~/.bashrc
-source ~/.bashrc
 
+source ~/.bashrc
 go version
 
 echo "Setup completed successfully! Yay!"
@@ -36,4 +36,4 @@ cat << "EOF"
     (|     | )
    /'\_   _/`\
    \___)=(___/
-EOF   
+EOF
