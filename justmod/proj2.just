@@ -68,7 +68,7 @@ allservice manager="127.0.0.1:3666" servers="127.0.0.1:3777,127.0.0.1:3778,127.0
     done
     wait
 
-setupcluster nservers="1": serverip="127.0.0.1"
+setupcluster nservers="1" serverip="127.0.0.1":
     #!/usr/bin/env bash
     servers=""
     for i in $(seq 0 $(({{nservers}} - 1))); do
