@@ -23,8 +23,8 @@ manager man_port="3666" servers="127.0.0.1:3777,127.0.0.1:3778,127.0.0.1:3779":
     ./bin/manager 0.0.0.0:{{man_port}} "{{servers}}"
 
 # run your KV store server
-server id="0" manager="127.0.0.1:3666" api_port="3777" backer_path="./backer.s0":
-    ./bin/server {{manager}} 127.0.0.1:{{api_port}} {{id}} {{backer_path}}
+server id="0" manager="127.0.0.1:3666" api_port="3777" backer_path="./backer.s0" api_ip="127.0.0.1":
+    ./bin/server {{manager}} {{api_ip}}:{{api_port}} {{id}} {{backer_path}}
 
 # run you KV store client in stdin/out interface mode
 client manager="127.0.0.1:3666":
@@ -45,7 +45,7 @@ python_run := if `which uv || true` != "" { "uv run" } else { "python3" }
 tmpdir_prefix := "/tmp/madkv-p2"
 
 # launch the KV service components on node (see README for conventions)
-service node="s0" manager="127.0.0.1:3666" servers="127.0.0.1:3777,127.0.0.1:3778,127.0.0.1:3779" backer_prefix="./backer":
+service node="s0" manager="127.0.0.1:3666" servers="127.0.0.1:3777,127.0.0.1:3778,127.0.0.1:3779" backer_prefix="./backer" api_ip="127.0.0.1":
     just p2::build
     just utils::build
     cargo run -p runner -r --bin service -- \
@@ -53,22 +53,22 @@ service node="s0" manager="127.0.0.1:3666" servers="127.0.0.1:3777,127.0.0.1:377
             $({{python_run}} justmod/xtract.py partid "{{node}}") \
             "{{manager}}" \
             $({{python_run}} justmod/xtract.py portof "{{servers}}" "{{node}}") \
-            "{{backer_prefix}}.{{node}}" \
+            "{{backer_prefix}}.{{node}}" {{api_ip}} \
         --manager-just-args p2::manager \
             $({{python_run}} justmod/xtract.py portof "{{manager}}" "{{node}}") \
             "{{servers}}" \
         --node-id "{{node}}"
 
 # launch all the KV servers 
-allservice manager="127.0.0.1:3666" servers="127.0.0.1:3777,127.0.0.1:3778,127.0.0.1:3779" backer_prefix="./backer":
+allservice manager="127.0.0.1:3666" servers="127.0.0.1:3777,127.0.0.1:3778,127.0.0.1:3779" backer_prefix="./backer" api_ip="127.0.0.1":
     #!/usr/bin/env bash
     IFS=',' read -ra ADDRS <<< "{{servers}}"
     for i in "${!ADDRS[@]}"; do
-        just p2::service "s$i" "{{manager}}" "{{servers}}" "{{backer_prefix}}" &
+        just p2::service "s$i" "{{manager}}" "{{servers}}" "{{backer_prefix}}" "{{api_ip}}" &
     done
     wait
 
-setupcluster nservers="1" serverip="127.0.0.1":
+setupcluster nservers="1" server_ip="127.0.0.1":
     #!/usr/bin/env bash
     servers=""
     for i in $(seq 0 $(({{nservers}} - 1))); do
@@ -76,10 +76,10 @@ setupcluster nservers="1" serverip="127.0.0.1":
         if [ $i -gt 0 ]; then
             servers="${servers},"
         fi
-        servers="${servers}{{serverip}}:${port}"
+        servers="${servers}{{server_ip}}:${port}"
     done
     just p2::manager "3666" "$servers" &
-    just p2::allservice "{{serverip}}:3666" "$servers"
+    just p2::allservice "{{server_ip}}:3666" "$servers" "./backer" "{{server_ip}}"
 
 # ensure a subdir under 'tmp/' exists
 tmpdir subdir:
