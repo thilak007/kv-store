@@ -248,6 +248,7 @@ func main() {
 	// Args
 	ManagerAddr := os.Args[1]
 	listenAddr := os.Args[2]
+	log.Printf("listening address: %s\n", listenAddr)
 	serverIdStr := os.Args[3]
 	storageDir := os.Args[4] // Path to the directory where BoltDB will store its data files
 	dbPath := filepath.Join(storageDir, "kvstore.db")

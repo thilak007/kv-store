@@ -36,7 +36,7 @@ func (m *manager) RegisterServer(ctx context.Context, in *pb.RegisterRequest) (*
 	p, ok := peer.FromContext(ctx)
 
 	if ok {
-		log.Printf("[ReqID: %d] Registering Server %s", reqID, in.ServerId)
+		log.Printf("[ReqID: %d] Registering Server %d", reqID, in.ServerId)
 	}
 
 	partitionId := in.ServerId
