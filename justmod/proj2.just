@@ -86,13 +86,13 @@ tmpdir subdir:
     mkdir -p "{{tmpdir_prefix}}/{{subdir}}"
 
 # run a fuzz testing scenario
-fuzz nservers="1" crashing="no" manager="127.0.0.1:3666" conflict="yes": (tmpdir "fuzz")
+fuzz nservers="1" crashing="no" manager="127.0.0.1:3666": (tmpdir "fuzz")
     just p2::build
     just utils::build
     cargo run -p runner -r --bin fuzzer -- \
         --num-clis 5 \
-        {{ if conflict == "yes" { "--conflict" } else { "" } }} \
-        --client-just-args p2::client "{{manager}}" {{ if conflict == "yes" { "fuzz" } else { "random" } }} \
+        --conflict \
+        --client-just-args p2::client "{{manager}}" {{ if crashing == "yes" { "fuzz" } else { "random" } }} \
         | tee "{{tmpdir_prefix}}/fuzz/fuzz-{{nservers}}-{{crashing}}.log"
     just p2::kill
 
