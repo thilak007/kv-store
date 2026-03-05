@@ -35,7 +35,7 @@ kill:
     -pkill -f './bin/server' > /dev/null 2>&1
     -pkill -f './bin/client' > /dev/null 2>&1
     -pkill -f './bin/manager' > /dev/null 2>&1
-#    rm -rf ./backer.*
+    rm -rf ./backer.*
 
 # NOTE: feel free to add more recipes as you see fit...
 #       also feel free to add extra parameters to the recipes as you see fit,
