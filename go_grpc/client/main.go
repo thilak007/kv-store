@@ -183,6 +183,7 @@ func handleScan(serverClients map[string]pb.KVServiceClient, startKey, endKey st
 	// determine which partitions actually need scanning
 	startPid := hashKey(startKey, keyspace) // Start server ID
 	endPid := hashKey(endKey, keyspace)     // End server ID
+	log.Printf("Starting Scan from server ID: %d to server ID: %d, start key: %s, end key: %s, keyspace: %s", startPid, endPid, startKey, endKey, keyspace)
 
 	allResp := make(map[string]string)
 	allSucceeded := make(map[string]bool)
@@ -373,7 +374,8 @@ func main() {
 
 	// Get partition map from Manager
 	managerAddr := os.Args[1]
-	keyspace := os.Args[2]
+	keyspace = os.Args[2]
+	log.Printf("Keyspace value: %s \n", keyspace)
 
 	numPartitions, partitionMap = getPartitionMap(managerAddr)
 

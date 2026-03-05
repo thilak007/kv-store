@@ -42,7 +42,7 @@ func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, e
 	p, ok := peer.FromContext(ctx)
 
 	if ok {
-		log.Printf("[ReqID: %d] Received PUT from %s for key: %s and value: %s", reqID, p.Addr.String(), in.Key, in.Value)
+		log.Printf("[ReqID: %d.%d] Received PUT from %s for key: %s and value: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key, in.Value)
 	}
 
 	key := in.Key
@@ -63,7 +63,7 @@ func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, e
 	// Update in-memory map
 	records[key] = value
 
-	log.Printf("[ReqID: %d] Sent PUT from %s for key: %s and value: %s. AlreadyExists: %t",
+	log.Printf("[ReqID: %d.%d] Sent PUT from %s for key: %s and value: %s. AlreadyExists: %t", s.myPartitionId,
 		reqID, p.Addr.String(), in.Key, in.Value, exists)
 
 	return &pb.PutResponse{
@@ -77,7 +77,7 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 	defer mu.Unlock()
 	p, ok := peer.FromContext(ctx)
 	if ok {
-		log.Printf("[ReqID: %d] Received SWAP from %s for key: %s and new value: %s", reqID, p.Addr.String(), in.Key, in.Value)
+		log.Printf("[ReqID: %d.%d] Received SWAP from %s for key: %s and new value: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key, in.Value)
 	}
 
 	key := in.Key
@@ -96,7 +96,7 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 	}
 
 	records[key] = newvalue
-	log.Printf("[ReqID: %d] Sent SWAP from %s for key: %s. OldValue: %s changed to NewValue: %s", reqID, p.Addr.String(), in.Key, oldvalue, newvalue)
+	log.Printf("[ReqID: %d.%d] Sent SWAP from %s for key: %s. OldValue: %s changed to NewValue: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key, oldvalue, newvalue)
 
 	return &pb.SwapResponse{
 		OldValue: oldvalue,
@@ -110,13 +110,13 @@ func (s *server) Get(ctx context.Context, in *pb.GetRequest) (*pb.GetResponse, e
 	defer mu.Unlock()
 	p, ok := peer.FromContext(ctx)
 	if ok {
-		log.Printf("[ReqID: %d] Received GET from %s for key: %s", reqID, p.Addr.String(), in.Key)
+		log.Printf("[ReqID: %d.%d] Received GET from %s for key: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key)
 	}
 
 	key := in.Key
 	value, exists := records[key]
 
-	log.Printf("[ReqID: %d] Sent GET from %s for key: %s. Got value: %s, exists: %t", reqID, p.Addr.String(), in.Key, value, exists)
+	log.Printf("[ReqID: %d.%d] Sent GET from %s for key: %s. Got value: %s, exists: %t", s.myPartitionId, reqID, p.Addr.String(), in.Key, value, exists)
 
 	return &pb.GetResponse{
 		Value:  value,
@@ -128,7 +128,7 @@ func (s *server) Scan(in *pb.ScanRequest, stream pb.KVService_ScanServer) error 
 	reqID := atomic.AddUint64(&requestID, 1)
 	p, ok := peer.FromContext(stream.Context())
 	if ok {
-		log.Printf("[ReqID: %d] Received SCAN from %s from key: %s to key: %s", reqID, p.Addr.String(), in.StartKey, in.EndKey)
+		log.Printf("[ReqID: %d.%d] Received SCAN from %s from key: %s to key: %s", s.myPartitionId, reqID, p.Addr.String(), in.StartKey, in.EndKey)
 	}
 
 	startKey := in.StartKey
@@ -155,7 +155,7 @@ func (s *server) Scan(in *pb.ScanRequest, stream pb.KVService_ScanServer) error 
 			Key:   key,
 			Value: snapshot[key],
 		}
-		log.Printf("[ReqID: %d] Sent SCAN from %s from key: %s to key: %s. Key: %s, Value: %s", reqID, p.Addr.String(), in.StartKey, in.EndKey, key, snapshot[key])
+		log.Printf("[ReqID: %d.%d] Sent SCAN from %s from key: %s to key: %s. Key: %s, Value: %s", s.myPartitionId, reqID, p.Addr.String(), in.StartKey, in.EndKey, key, snapshot[key])
 		if err := stream.Send(ScanRes); err != nil {
 			return err
 		}
@@ -169,7 +169,7 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 	defer mu.Unlock()
 	p, ok := peer.FromContext(ctx)
 	if ok {
-		log.Printf("[ReqID: %d] Received DELETE from %s for key: %s", reqID, p.Addr.String(), in.Key)
+		log.Printf("[ReqID: %d.%d] Received DELETE from %s for key: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key)
 	}
 
 	key := in.Key
@@ -190,7 +190,7 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 		delete(records, key)
 	}
 
-	log.Printf("[ReqID: %d] Sent DELETE from %s for key: %s. Exists: %t", reqID, p.Addr.String(), in.Key, exists)
+	log.Printf("[ReqID: %d.%d] Sent DELETE from %s for key: %s. Exists: %t", s.myPartitionId, reqID, p.Addr.String(), in.Key, exists)
 
 	return &pb.DeleteResponse{
 		Exists: exists,

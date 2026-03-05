@@ -92,7 +92,7 @@ fuzz nservers="1" crashing="no" manager="127.0.0.1:3666": (tmpdir "fuzz")
     cargo run -p runner -r --bin fuzzer -- \
         --num-clis 5 \
         --conflict \
-        --client-just-args p2::client "{{manager}}" {{ if crashing == "yes" { "fuzz" } else { "random" } }} \
+        --client-just-args p2::client "{{manager}}" "fuzz" \
         | tee "{{tmpdir_prefix}}/fuzz/fuzz-{{nservers}}-{{crashing}}.log"
     just p2::kill
 
