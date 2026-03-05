@@ -19,6 +19,7 @@ import (
 // global partition configuration (set in main)
 var numPartitions int32
 var partitionMap map[int32]string
+var keyspace string
 
 func handlePut(client pb.KVServiceClient, key, value string) {
 	attempt := 0
@@ -180,8 +181,8 @@ func isAllServerScansComplete(mp map[string]bool) bool {
 func handleScan(serverClients map[string]pb.KVServiceClient, startKey, endKey string) {
 
 	// determine which partitions actually need scanning
-	startPid := hashKey(startKey) // Start server ID
-	endPid := hashKey(endKey)     // End server ID
+	startPid := hashKey(startKey, keyspace) // Start server ID
+	endPid := hashKey(endKey, keyspace)     // End server ID
 
 	allResp := make(map[string]string)
 	allSucceeded := make(map[string]bool)
@@ -327,14 +328,7 @@ func connectToServer(serverAddr string) (*grpc.ClientConn, pb.KVServiceClient) {
 	}
 }
 
-func hashKey(key string) int32 {
-	// Range partitioning based solely on the first character of the key.
-	// We assume the first char is always alphanumeric (0-9, A-Z, a-z), so we
-	// map it into a dense range [0,62) and then scale that into the number of
-	// partitions.  This ignores any trailing characters entirely.
-	if len(key) == 0 {
-		return 0
-	}
+func randomKeyPartition(key string) int32 {
 	c := key[0]
 	var idx int32
 	switch {
@@ -345,20 +339,42 @@ func hashKey(key string) int32 {
 	case 'a' <= c && c <= 'z':
 		idx = int32(c-'a') + 36 // 36..61
 	default:
-		// should not happen, but fall back to 0
 		idx = 0
 	}
-	// scale idx∈[0,62) into [0,numPartitions). multiply before divide
 	return (idx * numPartitions) / 62
 }
 
+func keySuffixPartition(key string) int32 {
+	c := key[0]
+	idx := int32(c - '0')
+	return (idx * numPartitions) / 10
+}
+
+func hashKey(key, keyspace string) int32 {
+	if len(key) == 0 {
+		return 0
+	}
+	switch keyspace {
+	case "random":
+		return randomKeyPartition(key)
+	case "fuzz":
+		return keySuffixPartition(key[3:]) // Skip "key" prefix to increase variability
+	case "ycsb":
+		return keySuffixPartition(key[14:]) // Skip "user_usertable" prefix to increase variability
+	default:
+		return randomKeyPartition(key)
+	}
+}
+
 func main() {
-	if len(os.Args) < 2 {
-		log.Fatalf("Usage: %s <manager_address>", os.Args[0])
+	if len(os.Args) < 3 {
+		log.Fatalf("Usage: %s <manager_address> <keyspace>", os.Args[0])
 	}
 
 	// Get partition map from Manager
 	managerAddr := os.Args[1]
+	keyspace := os.Args[2]
+
 	numPartitions, partitionMap = getPartitionMap(managerAddr)
 
 	// Connect to all servers
@@ -398,7 +414,7 @@ func main() {
 			handleScan(serverClients, args[1], args[2])
 		default:
 			key := args[1]
-			partitionId := hashKey(key)
+			partitionId := hashKey(key, keyspace)
 			serverAddr := partitionMap[partitionId]
 			client := serverClients[serverAddr]
 

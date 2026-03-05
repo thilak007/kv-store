@@ -27,15 +27,15 @@ server id="0" manager="127.0.0.1:3666" api_port="3777" backer_path="./backer.s0"
     ./bin/server {{manager}} {{api_ip}}:{{api_port}} {{id}} {{backer_path}}
 
 # run you KV store client in stdin/out interface mode
-client manager="127.0.0.1:3666":
-    ./bin/client {{manager}}
+client manager="127.0.0.1:3666" keyspace="random":
+    ./bin/client {{manager}} {{keyspace}}
 
 # kill all processes of your KV store system
 kill:
     -pkill -f './bin/server' > /dev/null 2>&1
     -pkill -f './bin/client' > /dev/null 2>&1
     -pkill -f './bin/manager' > /dev/null 2>&1
-    rm -rf ./backer.*
+#    rm -rf ./backer.*
 
 # NOTE: feel free to add more recipes as you see fit...
 #       also feel free to add extra parameters to the recipes as you see fit,
@@ -86,13 +86,13 @@ tmpdir subdir:
     mkdir -p "{{tmpdir_prefix}}/{{subdir}}"
 
 # run a fuzz testing scenario
-fuzz nservers="1" crashing="no" manager="127.0.0.1:3666": (tmpdir "fuzz")
+fuzz nservers="1" crashing="no" manager="127.0.0.1:3666" conflict="yes": (tmpdir "fuzz")
     just p2::build
     just utils::build
     cargo run -p runner -r --bin fuzzer -- \
         --num-clis 5 \
-        --conflict \
-        --client-just-args p2::client "{{manager}}" \
+        {{ if conflict == "yes" { "--conflict" } else { "" } }} \
+        --client-just-args p2::client "{{manager}}" {{ if conflict == "yes" { "fuzz" } else { "random" } }} \
         | tee "{{tmpdir_prefix}}/fuzz/fuzz-{{nservers}}-{{crashing}}.log"
     just p2::kill
 
@@ -104,7 +104,7 @@ bench nclis wload nservers="1" manager="127.0.0.1:3666": (tmpdir "bench")
     cargo run -p runner -r --bin bencher -- \
         --num-clis "{{nclis}}" \
         --workload "{{wload}}" \
-        --client-just-args p2::client "{{manager}}" \
+        --client-just-args p2::client "{{manager}}" "ycsb"\
         | tee "{{tmpdir_prefix}}/bench/bench-{{nclis}}-{{wload}}-{{nservers}}.log"
     just p2::kill
 
