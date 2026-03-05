@@ -346,9 +346,13 @@ func randomKeyPartition(key string) int32 {
 }
 
 func keySuffixPartition(key string) int32 {
-	c := key[0]
-	idx := int32(c - '0')
-	return (idx * numPartitions) / 10
+	for _, c := range key {
+		if c != '0' {
+			idx := int32(c - '0')
+			return (idx * numPartitions) / 10
+		}
+	}
+	return 0
 }
 
 func hashKey(key, keyspace string) int32 {
