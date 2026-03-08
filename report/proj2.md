@@ -85,7 +85,9 @@ You will run a crashing/recovering fuzz test during demo time.
 
 We observed that the server correctly handles concurrent operations on shared keys, maintaining linearizability and returning consistent results. The fuzz testing revealed no assertion failures, indicating that our concurrency control mechanisms are robust under various workloads and contention levels.
 
-We also noticed that crashing few partitions blocked the fuzz test, as it was retrying the request till a successful response was returned by restarting the crashed server. After restarting the server, the fuzz test completed successfully. 
+We also noticed that crashing few partitions blocked the fuzz test, as it was retrying the request until a successful response is received. 
+
+  - After restarting the crashed server, a successful response is returned; the fuzz test resumes and completes successfully. 
 
 ## YCSB Benchmarking
 
@@ -99,11 +101,38 @@ We also noticed that crashing few partitions blocked the fuzz test, as it was re
 
 ### Comments
 
-*FIXME: add your discussions of benchmarking results*
+**1. 10 clients Throughout and Latency** 
+
+#### Overview:
+
+Metric| Value | Scenario
+:-: | :-: | :-:
+(Max) Agg. Throughput | 160k ops/s | Workload B, 5 servers
+(Min) Agg. Throughpt  | 200  ops/s (todo: update it) | Worload E, 1 server
+(Max) Avg. Latency    | 57ms    | Workload E, 1 server
+(Min) Avg. Latency    | Few us  | Workload B, 5 servers 
+
+#### Observations & Reasoning:
+
+- Across workloads A, B, C and F, as we increase the no. of partitions, the agg. throughput increases as the key space gets partitioned and hence different partitions can be queried simultaneously. 
+
+- Among all workloads, workload B has the highest agg. throughput of ~160k ops/s . This is because workload B is read heavy. Even though both B and C are read heavy, workload B has 5% writes whereas C is 100% read. This introduces read lock contention around 100k op/s for 5 partitions in C. Since some reads in certain servers can be done alongside the 5% writes on different partitions, workload B scales better.
+
+- Workload E has the lowest total throughput as it is SCAN heavy. Among all workloads, it also has the highest avg. & p99 latency, it is because it has to read multiple keys and send n/w requests to multiple servers involved in the range scan. 
+  - Within workload E, the avg latency decreases with increase in no. of partitions, as multiple ranges of keyspace can be read simultaneously. (57ms, 1 partition), (43ms, 3 partitions), (44ms, 5 partitions). As we increase partition size, there is a tradeoff between latency decrease due to multiple range scans happening parallely on CPUs vs latency increase due to n/w roundtrip.
+
+**2. Workload A: Total Throughput vs no. of clients:**
+
+- The read:write ratio of workload A is 1:1.
+- For a single partition, as we increase no. of clients the total throughput increases initially, but beyond 10 clients, it plateaus around 3000 op/s as there is read and write lock contention when more requests hit a single server. 
+  - The same plateau effect can be observed for 5 partitions, though as we increase no. of clients beyond 20, along with read and write contentions, clients have additional latency overhead of deserealizing/serealizing multiple protobuf request/responses from 5 different server connections. Whenever a new client gets added, additional time is consumed creating TCP handshakes with 5 different partitions.
+- For the same no. of clients, as we increase the no. of partitions, we are able to server read/write requests parallely on different parts of the keyspace, hence the total throughput of 5 partitions (max: 4400 ops/s) is greater than that of 1 partition (max: 3000 ops/s).
 
 ## Additional Optimizations
 
 - Better range partitioning to distribute load in a balanced manner.
-- SCAN Optimization: TODO
+- SCAN Optimization: Initially for any given key range, we were hitting all the servers in the cluster. We later optimized clients to send a request to a server only if the keyspace present on that server is part of the range of keys scanned.
 
+## AI Usage
 
+We used AI for formatting logs.
