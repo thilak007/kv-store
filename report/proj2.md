@@ -1,10 +1,35 @@
 # CS 739 MadKV Project 2
 
-**Group members**: `email`, Name `email`
+**Group members**: 
+- Name `Gokulnath Sourirajan`,  Email `sourirajan@wisc.edu`
+- Name `Thilak Raj Murugan`,    Email `tmurugan2@wisc.edu`
+
 
 ## Design Walkthrough
 
-*FIXME: add your design walkthrough text*
+- **Durability**: Added durable storage using BoltDB (bbolt fork): https://github.com/etcd-io/bbolt. Updated are first persisted on disk before updating the in-memory map data structure.
+- **Partition**: We use range based partitioning. Before each RPC call, the client uses range partitioning to find the correct partition to make a RPC. 
+
+### Client:
+
+- During the client initialization, the clients gets the list of servers from the manager and connects to all the servers. 
+
+### Server:
+
+- When the server boots up, it registers itself with the manager and obtains the partition ID.
+- Given a disk file path to durably persist the in-memory key-value pairs, we perform the following:
+
+1. Create a directory to store the file for the DB if it doesn't exist. bbolt mmaps the entire file to memory. This provides fast disk I/O. bbolt is a B+ tree storage engine.
+2. The key-value pairs are stored in a bucket within a file for a single partition.
+3. After registering with the manager, the server loads the key-value pairs present on disk, which is initially empty.
+
+Whenever a new command arrives, bbolt uses transactions to perform a read or write. This ensures ACID properties. Updated are first persisted on disk before updating the in-memory map data structure.
+
+### Proto: 
+ 
+#### Add new service for manager with 2 functions:
+ - RegisterServer - Used by kv store server to register it be part of the cluster whenever the server gets initiated. Returns partion ID of the server.
+ - GetPartitionMap - Used by clients to get the list of servers part of the cluster. A map of partition ID and the server address is returned. Using this partition map, the clients connect to the servers.
 
 ## Self-provided Testcase
 
@@ -50,7 +75,9 @@ You will run a crashing/recovering fuzz test during demo time.
 
 ### Comments
 
-*FIXME: add your comments on fuzz testing*
+We observed that the server correctly handles concurrent operations on shared keys, maintaining linearizability and returning consistent results. The fuzz testing revealed no assertion failures, indicating that our concurrency control mechanisms are robust under various workloads and contention levels.
+
+We also noticed that crashing few partitions blocked the fuzz test, as it was retrying the request till a successful response was returned by restarting the crashed server. After restarting the server, the fuzz test completed successfully. 
 
 ## YCSB Benchmarking
 
@@ -66,7 +93,9 @@ You will run a crashing/recovering fuzz test during demo time.
 
 *FIXME: add your discussions of benchmarking results*
 
-## Additional Discussion
+## Additional Optimizations
 
-*OPTIONAL: add extra discussions if applicable*
+- Better range partitioning to distribute load in a balanced manner.
+- SCAN Optimization: TODO
+
 
