@@ -108,9 +108,9 @@ We also noticed that crashing few partitions blocked the fuzz test, as it was re
 Metric| Value | Scenario
 :-: | :-: | :-:
 (Max) Agg. Throughput | 160k ops/s | Workload B, 5 servers
-(Min) Agg. Throughpt  | 200  ops/s (todo: update it) | Worload E, 1 server
+(Min) Agg. Throughput | 172  ops/s | Worload E, 1 server
 (Max) Avg. Latency    | 57ms    | Workload E, 1 server
-(Min) Avg. Latency    | Few us  | Workload B, 5 servers 
+(Min) Avg. Latency    | 1.3ms   | Workload B, 5 servers 
 
 #### Observations & Reasoning:
 
