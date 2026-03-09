@@ -116,7 +116,7 @@ Metric| Value | Scenario
 
 - Across workloads A, B, C and F, as we increase the no. of partitions, the agg. throughput increases as the key space gets partitioned and hence different partitions can be queried simultaneously. 
 
-- Among all workloads, workload B has the highest agg. throughput of ~160k ops/s . This is because workload B is read heavy. Even though both B and C are read heavy, workload B has 5% writes whereas C is 100% read. This introduces read lock contention around 100k op/s for 5 partitions in C. Since some reads in certain servers can be done alongside the 5% writes on different partitions, workload B scales better.
+- Among all workloads, workload B has the highest agg. throughput of ~160k ops/s . This is because workload B is read heavy. Even though both B and C are read heavy, workload B has higher throughput than C as C hits more hot keys than B.
 
 - Workload E has the lowest total throughput as it is SCAN heavy. Among all workloads, it also has the highest avg. & p99 latency, it is because it has to read multiple keys and send n/w requests to multiple servers involved in the range scan. 
   - Within workload E, the avg latency decreases with increase in no. of partitions, as multiple ranges of keyspace can be read simultaneously. (57ms, 1 partition), (43ms, 3 partitions), (44ms, 5 partitions). As we increase partition size, there is a tradeoff between latency decrease due to multiple range scans happening parallely on CPUs vs latency increase due to n/w roundtrip.
@@ -124,13 +124,16 @@ Metric| Value | Scenario
 **2. Workload A: Total Throughput vs no. of clients:**
 
 - The read:write ratio of workload A is 1:1.
-- For a single partition, as we increase no. of clients the total throughput increases initially, but beyond 10 clients, it plateaus around 3000 op/s as there is read and write lock contention when more requests hit a single server. 
-  - The same plateau effect can be observed for 5 partitions, though as we increase no. of clients beyond 20, along with read and write contentions, clients have additional latency overhead of deserealizing/serealizing multiple protobuf request/responses from 5 different server connections. Whenever a new client gets added, additional time is consumed creating TCP handshakes with 5 different partitions.
+- For a single partition, as we increase no. of clients the total throughput increases initially, but beyond 10 clients, it plateaus around 3000 op/s as there is lock contention when more read/write requests hit a single server. 
+  - The same plateau effect can be observed for 5 partitions, though as we increase no. of clients beyond 20, along with lock contentions, clients have additional latency overhead of deserealizing/serealizing multiple protobuf request/responses from 5 different server connections. Whenever a new client gets added, additional time is consumed creating TCP handshakes with 5 different partitions.
 - For the same no. of clients, as we increase the no. of partitions, we are able to server read/write requests parallely on different parts of the keyspace, hence the total throughput of 5 partitions (max: 4400 ops/s) is greater than that of 1 partition (max: 3000 ops/s).
 
 ## Additional Optimizations
 
-- Better range partitioning to distribute load in a balanced manner.
+- Better range partitioning to distribute load in a balanced manner. We use 2 different partitioning schemes (random and keySuffix partitioning) and change it dynamically based on workload type - fuzz/ycsb/random.
+  - Random Key Partition: Partitions based on the first character across 62 possible characters (0-9, A-Z, a-z) for even load distribution
+  - Key Suffix Partition: Used for keys with common prefixes (like "key" or "user_usertable") - removes the prefix to better partition over the remaining characters (typically 10 numeric characters) for more balanced distribution. If we don't remove prefix, all the keys would go to a single partition based on the first character "k" or "u". 
+
 - SCAN Optimization: Initially for any given key range, we were hitting all the servers in the cluster. We later optimized clients to send a request to a server only if the keyspace present on that server is part of the range of keys scanned.
 
 ## AI Usage
