@@ -1,9 +1,6 @@
-GET key0
-GET key1
-GET key3
 GET key5
 GET key6
 GET key8
-SCAN key0 key0
-SCAN key3 key3
+SCAN key4 key6
+SCAN key5 key9
 STOP
