@@ -31,7 +31,7 @@ Durability and Paritioning of key space is introduced to the system in the follo
   2. The key-value pairs are stored in a bucket within a file for a single partition.
   3. After registering with the manager, the server loads the key-value pairs present on disk, which is initially empty.
 
-Whenever a new command arrives, bbolt uses transactions to perform a read or write. This ensures ACID properties. Updated are first persisted on disk before updating the in-memory map data structure.
+Whenever a new command arrives, bbolt uses transactions to perform a read or write. This ensures ACID properties. Updates are first persisted on disk before updating the in-memory map data structure.
 
 ### Proto: 
  

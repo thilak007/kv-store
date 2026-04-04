@@ -228,7 +228,7 @@ func Register(ManagerAddr string, serverId int32) int32 {
 			time.Sleep(retryDelay)
 			continue
 		}
-
+		// If unable to register, log the error and retry registration after a delay
 		if !res.Success {
 			log.Fatalf("Manager rejected registration for server ID %d.", serverId)
 		}
