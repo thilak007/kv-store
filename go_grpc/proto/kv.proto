@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+option go_package = "go_grpc/proto";
+
+package kvservice;
+
+// -----------------------------
+// Service
+// -----------------------------
+service KVService {
+  rpc Put(PutRequest) returns (PutResponse);
+  rpc Swap(SwapRequest) returns (SwapResponse);
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Scan(ScanRequest) returns (stream ScanResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+}
+
+service ClusterManager {
+  rpc RegisterServer(RegisterRequest) returns (RegisterResponse);
+  rpc GetPartitionMap(PartitionMapRequest) returns (PartitionMapResponse);
+}
+
+// -----------------------------
+// Requests
+// -----------------------------
+message PutRequest {
+  string key = 1;
+  string value = 2;
+}
+
+message SwapRequest {
+  string key = 1;
+  string value = 2;
+}
+
+message GetRequest {
+  string key = 1;
+}
+
+message ScanRequest {
+  string start_key = 1;
+  string end_key = 2;
+}
+
+message DeleteRequest {
+  string key = 1;
+}
+
+message RegisterRequest {
+  int32 server_id = 1;
+}
+
+
+message PartitionMapRequest {}
+
+
+// -----------------------------
+// Responses
+// -----------------------------
+message PutResponse{
+  bool already_exists = 1;
+}
+
+message SwapResponse{
+  string old_value = 1; // if exists
+  bool exists = 2;
+}
+
+message GetResponse{
+  string value = 1; // if exists
+  bool exists = 2;
+}
+
+message ScanResponse {
+  string key = 1;
+  string value = 2;
+}
+
+message DeleteResponse{
+  bool exists = 1;
+}
+
+message RegisterResponse{
+  int32 partition_id = 1;
+  bool success = 2;
+}
+
+message PartitionMapResponse{
+  int32 num_partitions = 1;
+  map<int32, string> partition_map = 2;
+}

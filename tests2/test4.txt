@@ -1,0 +1,2 @@
+GET key2
+STOP
