@@ -50,15 +50,14 @@ message RegisterRequest {
   int32 server_id = 1;
 }
 
-
 message PartitionMapRequest {}
-
 
 // -----------------------------
 // Responses
 // -----------------------------
 message PutResponse{
   bool already_exists = 1;
+  string leader_id    = 2;
 }
 
 message SwapResponse{

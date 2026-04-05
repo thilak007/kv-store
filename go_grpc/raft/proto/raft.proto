@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+option go_package = "go_grpc/raft/proto";
+
+import "google/protobuf/timestamp.proto";
+
+
+package raft;
+
+// -----------------------------
+// Service
+// -----------------------------
+service Raft {
+  rpc AppendEntries(AppendRequest) returns (AppendResponse);
+  rpc RequestVote(VoteRequest) returns (VoteResponse);
+}
+
+// -----------------------------
+// Requests
+// -----------------------------
+message LogEntry {
+  uint64   term            = 1;
+  uint64   index   = 2;
+  uint32   entry_type     = 3;
+
+  bytes   command  = 4;
+  google.protobuf.Timestamp   timestamp   = 5;
+}
+
+message AppendRequest {
+  uint64   term            = 1;
+  uint64   leader_commit   = 2;
+  string  leader_id       = 3;
+
+  uint64   prev_log_index  = 4;
+  uint64   prev_log_term   = 5;
+
+  repeated LogEntry entries = 6;  
+}
+
+message VoteRequest {
+  uint64 term = 1;
+  string candidate_id = 2;
+
+  uint64   last_log_index  = 3;
+  uint64   last_log_term   = 4;
+}
+
+
+// -----------------------------
+// Responses
+// -----------------------------
+message AppendResponse{
+  uint64 term   = 1;
+  bool success = 2;
+}
+
+message VoteResponse{
+  uint64 term = 1;
+  bool vote_granted = 2;
+}
