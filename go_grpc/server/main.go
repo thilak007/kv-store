@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	pb "go_grpc/proto"
+	"go_grpc/raft"
 	"log"
 	"net"
 	"os"
@@ -32,6 +33,55 @@ type server struct {
 	db            *bolt.DB
 	bucketName    string
 	myPartitionId int32
+	raftNode      *raft.RaftNode
+}
+
+type kvStateMachine struct {
+	db         *bolt.DB
+	bucketName string
+}
+
+func (sm *kvStateMachine) Apply(rawCmd []byte) error {
+	cmd, err := raft.DeserializeCommand(rawCmd)
+	if err != nil {
+		return err
+	}
+
+	switch cmd.Op {
+	case "SWAP":
+	case "PUT":
+		_, _, err := insertOrUpdateRecord(cmd.Key, cmd.Value, true, sm.db, sm.bucketName)
+		// todo: Add log to indicate that it successfully updated the record
+		return err
+	case "DELETE":
+		// Todo
+	}
+
+	return nil
+}
+
+func insertOrUpdateRecord(key string, value string, isAcquireLock bool, db *bolt.DB, bucketName string) (bool, string, error) {
+	if isAcquireLock {
+		mu.Lock()
+		defer mu.Unlock()
+	}
+
+	oldvalue, exists := records[key]
+
+	// Persist to BoltDB
+	err := db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketName))
+		return b.Put([]byte(key), []byte(value))
+	})
+
+	if err != nil {
+		log.Printf("Failed to insert/update record to BoltDB: %v", err)
+		return exists, oldvalue, err
+	}
+
+	// Update in-memory map
+	records[key] = value
+	return exists, oldvalue, nil
 }
 
 func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, error) {
@@ -47,21 +97,20 @@ func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, e
 
 	key := in.Key
 	value := in.Value
-	_, exists := records[key]
 
-	// Persist to BoltDB
-	err := s.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(s.bucketName))
-		return b.Put([]byte(key), []byte(value))
-	})
+	/*
+		Todo:
+		- If follower, then return with leader ID
+		- If leader, propose for log replication - call raft library function.
+		- Call apply from raft
+	*/
+
+	exists, _, err := insertOrUpdateRecord(key, value, false, s.db, s.bucketName)
 
 	if err != nil {
 		log.Printf("[ReqID: %d] Failed to persist PUT to BoltDB: %v", reqID, err)
 		return nil, err
 	}
-
-	// Update in-memory map
-	records[key] = value
 
 	log.Printf("[ReqID: %d.%d] Sent PUT from %s for key: %s and value: %s. AlreadyExists: %t", s.myPartitionId,
 		reqID, p.Addr.String(), in.Key, in.Value, exists)
@@ -82,20 +131,13 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 
 	key := in.Key
 	newvalue := in.Value
-	oldvalue, exists := records[key]
-
-	// Persist to BoltDB
-	err := s.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(s.bucketName))
-		return b.Put([]byte(key), []byte(newvalue))
-	})
+	exists, oldvalue, err := insertOrUpdateRecord(key, newvalue, false, s.db, s.bucketName)
 
 	if err != nil {
 		log.Printf("[ReqID: %d] Failed to persist SWAP to BoltDB: %v", reqID, err)
 		return nil, err
 	}
 
-	records[key] = newvalue
 	log.Printf("[ReqID: %d.%d] Sent SWAP from %s for key: %s. OldValue: %s changed to NewValue: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key, oldvalue, newvalue)
 
 	return &pb.SwapResponse{
@@ -291,6 +333,7 @@ func main() {
 			return nil
 		})
 	})
+
 	if err != nil {
 		log.Fatalf("Failed to load data from BoltDB: %v", err)
 	}
@@ -302,11 +345,21 @@ func main() {
 		log.Fatalf("Failed to listen: %v", err)
 	}
 
+	// Create a Raft node and initialize the KV state machine instance.
+	stateMachine := &kvStateMachine{
+		db:         db,
+		bucketName: bucketName,
+	}
+	nodeID := fmt.Sprintf("%d.%d", serverId, partitionId)
+	raftNode := raft.NewRaftNode(nodeID, []string{}, stateMachine, db, "raft_log")
+	log.Printf("Initialized raft node: %s", raftNode.String())
+
 	s := grpc.NewServer()
 	pb.RegisterKVServiceServer(s, &server{
 		db:            db,
 		bucketName:    bucketName,
 		myPartitionId: partitionId,
+		raftNode:      raftNode,
 	})
 
 	log.Printf("gRPC server listening at %v", lis.Addr())
