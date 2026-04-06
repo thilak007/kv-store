@@ -1,12 +1,8 @@
-// AppendEntries
-// RequestVote
-// LogReplication
-// LeaderElection
 package raft
 
 import (
-	"context"
 	"fmt"
+	"log"
 	pb "go_grpc/raft/proto"
 	"sync"
 
@@ -51,7 +47,7 @@ type StateMachine interface {
 //   - nextIndex, matchIndex
 //
 // Thread safety:
-//   - mu protects ALL Raft fields. The kvMu protects the KV store.
+//   - raftmu protects ALL Raft fields.
 type RaftNode struct {
 	raftmu sync.Mutex
 
@@ -59,6 +55,11 @@ type RaftNode struct {
 	currentTerm uint64 // Latest term this node has seen
 	votedFor    string // Candidate that received vote in current term ("" if none)
 	log         *Log   // Log entries; each contains command + term + index
+
+	// ── Snapshot State (persistent) ───────────────────────────────
+	snapshotIndex uint64 // Index of last entry included in snapshot
+	snapshotTerm  uint64 // Term of last entry included in snapshot
+	snapshotBuf   []byte // Snapshot data (compact representation of state machine)
 
 	// ── Volatile State ────────────────────────────────────────────
 	commitIndex uint64 // Highest log entry known to be committed
@@ -78,23 +79,19 @@ type RaftNode struct {
 	raftBucket string       // Bucket name for Raft log in bbolt
 
 	// ── Role & Channels ──────────────────────────────────────────
-	role NodeRole
+	role            NodeRole
+	applyCh         chan struct{}            // Signal for apply loop when commitIndex advances
+	stopCh          chan struct{}            // Signal to shut down background goroutines
+	replicateCh     chan struct{}            // Signal for leader to broadcast AppendEntries
+	electionCh      chan struct{}            // Signal to start a new election
+	resetElectionCh chan struct{}            // Signal to reset election timeout
+	peerClients     map[string]pb.RaftClient // gRPC clients for each peer
+	votes           int                      // Votes received in current election
 }
 
 // NewRaftNode creates and initializes a new Raft node.
-//
-// Parameters:
-//   - id:         Unique identifier for this node (e.g., "0.0")
-//   - peers:      List of peer node identifiers
-//   - kvsm:       State machine interface for applying commands
-//   - db:         bbolt database (shared with server)
-//   - raftBucket: Bucket name for Raft log in bbolt
-//
-// The node starts in Follower state with term 0.
-// Background goroutines (election timer, apply loop) are NOT started here —
-// they are started by Start().
 func NewRaftNode(id string, peers []string, kvsm StateMachine, db *bolt.DB, raftBucket string) *RaftNode {
-	rf := &RaftNode{
+	return &RaftNode{
 		currentTerm: 0,
 		votedFor:    "",
 		log:         NewLog(),
@@ -108,9 +105,8 @@ func NewRaftNode(id string, peers []string, kvsm StateMachine, db *bolt.DB, raft
 		db:          db,
 		raftBucket:  raftBucket,
 		role:        Follower,
+		peerClients: make(map[string]pb.RaftClient),
 	}
-
-	return rf
 }
 
 // GetState returns a snapshot of the node's current state for debugging.
@@ -118,6 +114,34 @@ func (rf *RaftNode) GetState() (term uint64, role NodeRole, logLen int) {
 	rf.raftmu.Lock()
 	defer rf.raftmu.Unlock()
 	return rf.currentTerm, rf.role, rf.log.Len()
+}
+
+// Start launches all background goroutines for the Raft node.
+func (rf *RaftNode) Start() {
+	rf.applyCh = make(chan struct{}, 1)
+	rf.stopCh = make(chan struct{})
+	rf.replicateCh = make(chan struct{}, 1)
+	rf.electionCh = make(chan struct{}, 1)
+	rf.resetElectionCh = make(chan struct{}, 1)
+	go rf.applyLoop()
+	go rf.replicateAndHeartbeatLoop()
+	go rf.electionTimerLoop()
+
+	log.Printf("[Node %s] Started (role=%s, term=%d, logLen=%d, peers=%v)",
+		rf.nodeId, rf.role, rf.currentTerm, rf.log.Len(), rf.peers)
+}
+
+// SetPeerClient registers a gRPC client for a peer.
+// Must be called before the node becomes a leader.
+func (rf *RaftNode) SetPeerClient(peerID string, client pb.RaftClient) {
+	rf.raftmu.Lock()
+	defer rf.raftmu.Unlock()
+	rf.peerClients[peerID] = client
+}
+
+// Stop signals all background goroutines to shut down.
+func (rf *RaftNode) Stop() {
+	close(rf.stopCh)
 }
 
 // String returns a human-readable representation of the node's state.
@@ -129,33 +153,4 @@ func (rf *RaftNode) String() string {
 		"RaftNode{id=%s, role=%s, term=%d, votedFor=%s, commitIndex=%d, lastApplied=%d, log=%s}",
 		rf.nodeId, rf.role, rf.currentTerm, rf.votedFor, rf.commitIndex, rf.lastApplied, rf.log.String(),
 	)
-}
-
-type raftService struct {
-	pb.UnimplementedRaftServer
-}
-
-func (s *raftService) AppendEntries(ctx context.Context, in *pb.AppendRequest) (*pb.AppendResponse, error) {
-
-	// 1. Reply false if term < currentTerm (§5.1)
-	// 2. Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm (§5.3)
-	// 3. If an existing entry conflicts with a new one (same index but different terms), delete the existing entry and all that follow it (§5.3)
-	// 4. Append any new entries not already in the log
-	// 5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
-
-}
-
-// message AppendResponse{
-//   uint64 term   = 1;
-//   bool success = 2;
-// }
-
-// message VoteResponse{
-//   uint64 term = 1;
-//   bool vote_granted = 2;
-// }
-
-func (s *raftService) RequestVote(ctx context.Context, in *pb.VoteRequest) (*pb.VoteResponse, error) {
-	// 1. Reply false if term < currentTerm (§5.1)
-	// 2. If votedFor is null or candidateId, and candidate’s log is at least as up-to-date as receiver’s log, grant vote (§5.2, §5.4)
 }

@@ -57,6 +57,25 @@ func (l *Log) TruncateFrom(index uint64) {
 	l.entries = l.entries[:index]
 }
 
+// CompactBefore removes all entries with index <= given index.
+// Used during snapshot creation: entries 1 through index are discarded
+// because they're now part of the snapshot.
+// The entry at `index` becomes the new implicit "index 0" boundary.
+// Note: caller must hold RaftNode.raftmu.
+func (l *Log) CompactBefore(index uint64) {
+	if index < 1 || index >= uint64(len(l.entries)) {
+		return
+	}
+
+	// Keep entries from index+1 onwards, but add a new dummy at position 0
+	// representing the snapshot boundary
+	termAtSnapshot := l.entries[index].Term
+	newEntries := make([]*LogEntry, 1, 1+len(l.entries)-int(index))
+	newEntries[0] = &LogEntry{Term: termAtSnapshot, Index: index} // boundary dummy
+	newEntries = append(newEntries, l.entries[index+1:]...)
+	l.entries = newEntries
+}
+
 // Get returns the entry at the given index, or nil if out of bounds.
 func (l *Log) Get(index uint64) *LogEntry {
 	if index >= uint64(len(l.entries)) {
@@ -134,4 +153,22 @@ func (l *Log) String() string {
 	}
 	s += "]}"
 	return s
+}
+
+// IsUpToDate checks whether a candidate's log is at least as up-to-date as
+// this log. Used in RequestVote (§5.4.1).
+//
+// A log is "up-to-date" if:
+//   - The last entry has a newer term, OR
+//   - The last entry has the same term but a higher (or equal) index.
+func (l *Log) IsUpToDate(lastTerm, lastIndex uint64) bool {
+	// Note: caller must hold RaftNode.raftmu
+	n := len(l.entries)
+	myLastTerm := uint64(0)
+	myLastIndex := uint64(n - 1)
+	if n > 1 {
+		myLastTerm = l.entries[n-1].Term
+	}
+
+	return lastTerm > myLastTerm || (lastTerm == myLastTerm && lastIndex >= myLastIndex)
 }
