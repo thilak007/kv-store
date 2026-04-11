@@ -62,9 +62,9 @@ func (sm *kvStateMachine) Apply(rawCmd []byte) error {
 		exists, oldValue, err := insertOrUpdateRecord(cmd.Key, cmd.Value, sm.db, sm.bucketName)
 		if cmd.Op == "SWAP" {
 			// message for SWAP
-			log.Printf("[Inside Apply]: Successfully applied SWAP for key: %s, oldValue: %s, newValue: %s", cmd.Key, oldValue, cmd.Value)
+			log.Printf("[Inside Apply]: Completed SWAP for key: %s, oldValue: %s, newValue: %s, error: %v", cmd.Key, oldValue, cmd.Value, err)
 		} else {
-			log.Printf("[Inside Apply]: Successfully applied PUT for key: %s, exists: %t", cmd.Key, exists)
+			log.Printf("[Inside Apply]: Completed PUT for key: %s, exists: %t, error: %v", cmd.Key, exists, err)
 		}
 		// Send response back to the waiting Put handler
 		sm.responseCh <- ResponseMessage{
@@ -74,10 +74,16 @@ func (sm *kvStateMachine) Apply(rawCmd []byte) error {
 		}
 		return err
 	case "DELETE":
-		// Todo
+		exists, err := deleteRecord(cmd.Key, sm.db, sm.bucketName)
+		log.Printf("[Inside Apply]: Completed DELETE for key: %s, exists: %t, error: %v", cmd.Key, exists, err)
+		sm.responseCh <- ResponseMessage{
+			Exists: exists,
+			Err:    err,
+		}
+		return err
 	}
 
-	return nil
+	return fmt.Errorf("Invalid command: %s", cmd.Op)
 }
 
 func insertOrUpdateRecord(key string, value string, db *bolt.DB, bucketName string) (bool, string, error) {
@@ -98,6 +104,32 @@ func insertOrUpdateRecord(key string, value string, db *bolt.DB, bucketName stri
 	// Update in-memory map
 	records[key] = value
 	return exists, oldvalue, nil
+}
+
+func deleteRecord(key string, db *bolt.DB, bucketName string) (bool, error) {
+	_, exists := records[key]
+
+	// The deleteRecord is always called for an existing key, this is just an additional check.
+	if !exists {
+		return false, nil
+	}
+
+	// Persist to BoltDB
+	err := db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketName))
+		return b.Delete([]byte(key))
+	})
+
+	if err != nil {
+		log.Printf("Failed to delete record from BoltDB: %v", err)
+		return exists, err
+	}
+
+	// Update in-memory map
+	if exists {
+		delete(records, key)
+	}
+	return exists, nil
 }
 
 func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, error) {
@@ -238,12 +270,14 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 	reqID := atomic.AddUint64(&requestID, 1)
 	mu.Lock()
 	defer mu.Unlock()
+
 	p, ok := peer.FromContext(ctx)
 	if ok {
 		log.Printf("[ReqID: %d.%d] Received DELETE from %s for key: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key)
 	}
 
 	key := in.Key
+
 	_, exists := records[key]
 
 	if !exists {
@@ -253,25 +287,22 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 		}, nil
 	}
 
-	// Persist to BoltDB
-	err := s.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(s.bucketName))
-		return b.Delete([]byte(key))
-	})
+	var cmd *raft.Command = raft.NewCommand("DELETE", key, "")
 
-	if err != nil {
-		log.Printf("[ReqID: %d] Failed to persist DELETE to BoltDB: %v", reqID, err)
-		return nil, err
+	s.raftNode.ProposeCmd(cmd)
+
+	// Wait for the Apply thread to complete and send the response through the channel
+	resp := <-s.responseCh
+
+	if resp.Err != nil {
+		log.Printf("[ReqID: %d] Failed to persist DELETE to BoltDB: %v", reqID, resp.Err)
+		return nil, resp.Err
 	}
 
-	if exists {
-		delete(records, key)
-	}
-
-	log.Printf("[ReqID: %d.%d] Sent DELETE from %s for key: %s. Exists: %t", s.myPartitionId, reqID, p.Addr.String(), in.Key, exists)
+	log.Printf("[ReqID: %d.%d] Sent DELETE from %s for key: %s. Exists: %t", s.myPartitionId, reqID, p.Addr.String(), in.Key, resp.Exists)
 
 	return &pb.DeleteResponse{
-		Exists: exists,
+		Exists: resp.Exists,
 	}, nil
 }
 
