@@ -38,9 +38,11 @@ type server struct {
 	pb.UnimplementedKVServiceServer
 	db            *bolt.DB
 	bucketName    string
+	replicaId     int32
 	myPartitionId int32
 	raftNode      *raft.RaftNode
 	responseCh    chan ResponseMessage
+	serverNodeId  string // "<replicaID.partitionID>"
 }
 
 type kvStateMachine struct {
@@ -132,6 +134,16 @@ func deleteRecord(key string, db *bolt.DB, bucketName string) (bool, error) {
 	return exists, nil
 }
 
+func (s *server) isLeader() (bool, string) {
+	role, leaderId := s.raftNode.GetState()
+	return role == raft.Leader, leaderId
+}
+
+/*
+1) If follower or candidate, then return with leader ID
+2a) If leader, propose for log replication - call raft library function.
+2b) Call apply from raft
+*/
 func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, error) {
 	reqID := atomic.AddUint64(&requestID, 1)
 	mu.Lock()
@@ -140,18 +152,20 @@ func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, e
 	p, ok := peer.FromContext(ctx)
 
 	if ok {
-		log.Printf("[ReqID: %d.%d] Received PUT from %s for key: %s and value: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key, in.Value)
+		log.Printf("[ReqID: %s--%d] Received PUT from %s for key: %s and value: %s", s.serverNodeId, reqID, p.Addr.String(), in.Key, in.Value)
+	}
+
+	isLeader, leaderId := s.isLeader()
+	if !isLeader {
+		log.Printf("[ReqID: %s--%d] Rejecting PUT from %s. Not the leader; Redirecting to leader: %s", s.serverNodeId, reqID, p.Addr.String(), leaderId)
+		return &pb.PutResponse{
+			AlreadyExists: false,
+			LeaderId:      leaderId,
+		}, nil
 	}
 
 	key := in.Key
 	value := in.Value
-
-	/*
-		Todo:
-		- If follower, then return with leader ID
-		- If leader, propose for log replication - call raft library function.
-		- Call apply from raft
-	*/
 
 	var cmd *raft.Command = raft.NewCommand("PUT", key, value)
 
@@ -165,11 +179,12 @@ func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, e
 		return nil, resp.Err
 	}
 
-	log.Printf("[ReqID: %d.%d] Sent PUT from client %s for key: %s and value: %s. AlreadyExists: %t", s.myPartitionId,
+	log.Printf("[ReqID: %s--%d] Sent PUT from client %s for key: %s and value: %s. AlreadyExists: %t", s.serverNodeId,
 		reqID, p.Addr.String(), in.Key, in.Value, resp.Exists)
 
 	return &pb.PutResponse{
 		AlreadyExists: resp.Exists,
+		LeaderId:      leaderId,
 	}, nil
 }
 
@@ -180,7 +195,17 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 
 	p, ok := peer.FromContext(ctx)
 	if ok {
-		log.Printf("[ReqID: %d.%d] Received SWAP from %s for key: %s and new value: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key, in.Value)
+		log.Printf("[ReqID: %s--%d] Received SWAP from %s for key: %s and new value: %s", s.serverNodeId, reqID, p.Addr.String(), in.Key, in.Value)
+	}
+
+	isLeader, leaderId := s.isLeader()
+	if !isLeader {
+		log.Printf("[ReqID: %s--%d] Rejecting SWAP from %s. Not the leader; Redirecting to leader: %s", s.serverNodeId, reqID, p.Addr.String(), leaderId)
+		return &pb.SwapResponse{
+			OldValue: "",
+			Exists:   false,
+			LeaderId: leaderId,
+		}, nil
 	}
 
 	key := in.Key
@@ -198,12 +223,13 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 		return nil, resp.Err
 	}
 
-	log.Printf("[ReqID: %d.%d] Sent SWAP from client %s for key: %s. OldValue: %s changed to NewValue: %s", s.myPartitionId,
+	log.Printf("[ReqID: %s--%d] Sent SWAP from client %s for key: %s. OldValue: %s changed to NewValue: %s", s.serverNodeId,
 		reqID, p.Addr.String(), in.Key, resp.OldValue, value)
 
 	return &pb.SwapResponse{
 		OldValue: resp.OldValue,
 		Exists:   resp.Exists,
+		LeaderId: leaderId,
 	}, nil
 }
 
@@ -213,13 +239,13 @@ func (s *server) Get(ctx context.Context, in *pb.GetRequest) (*pb.GetResponse, e
 	defer mu.Unlock()
 	p, ok := peer.FromContext(ctx)
 	if ok {
-		log.Printf("[ReqID: %d.%d] Received GET from %s for key: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key)
+		log.Printf("[ReqID: %s--%d] Received GET from %s for key: %s", s.serverNodeId, reqID, p.Addr.String(), in.Key)
 	}
 
 	key := in.Key
 	value, exists := records[key]
 
-	log.Printf("[ReqID: %d.%d] Sent GET from %s for key: %s. Got value: %s, exists: %t", s.myPartitionId, reqID, p.Addr.String(), in.Key, value, exists)
+	log.Printf("[ReqID: %s--%d] Sent GET from %s for key: %s. Got value: %s, exists: %t", s.serverNodeId, reqID, p.Addr.String(), in.Key, value, exists)
 
 	return &pb.GetResponse{
 		Value:  value,
@@ -231,7 +257,7 @@ func (s *server) Scan(in *pb.ScanRequest, stream pb.KVService_ScanServer) error 
 	reqID := atomic.AddUint64(&requestID, 1)
 	p, ok := peer.FromContext(stream.Context())
 	if ok {
-		log.Printf("[ReqID: %d.%d] Received SCAN from %s from key: %s to key: %s", s.myPartitionId, reqID, p.Addr.String(), in.StartKey, in.EndKey)
+		log.Printf("[ReqID: %s--%d] Received SCAN from %s from key: %s to key: %s", s.serverNodeId, reqID, p.Addr.String(), in.StartKey, in.EndKey)
 	}
 
 	startKey := in.StartKey
@@ -258,7 +284,7 @@ func (s *server) Scan(in *pb.ScanRequest, stream pb.KVService_ScanServer) error 
 			Key:   key,
 			Value: snapshot[key],
 		}
-		log.Printf("[ReqID: %d.%d] Sent SCAN from %s from key: %s to key: %s. Key: %s, Value: %s", s.myPartitionId, reqID, p.Addr.String(), in.StartKey, in.EndKey, key, snapshot[key])
+		log.Printf("[ReqID: %s--%d] Sent SCAN from %s from key: %s to key: %s. Key: %s, Value: %s", s.serverNodeId, reqID, p.Addr.String(), in.StartKey, in.EndKey, key, snapshot[key])
 		if err := stream.Send(ScanRes); err != nil {
 			return err
 		}
@@ -273,7 +299,7 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 
 	p, ok := peer.FromContext(ctx)
 	if ok {
-		log.Printf("[ReqID: %d.%d] Received DELETE from %s for key: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key)
+		log.Printf("[ReqID: %s--%d] Received DELETE from %s for key: %s", s.serverNodeId, reqID, p.Addr.String(), in.Key)
 	}
 
 	key := in.Key
@@ -299,7 +325,7 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 		return nil, resp.Err
 	}
 
-	log.Printf("[ReqID: %d.%d] Sent DELETE from %s for key: %s. Exists: %t", s.myPartitionId, reqID, p.Addr.String(), in.Key, resp.Exists)
+	log.Printf("[ReqID: %s--%d] Sent DELETE from %s for key: %s. Exists: %t", s.serverNodeId, reqID, p.Addr.String(), in.Key, resp.Exists)
 
 	return &pb.DeleteResponse{
 		Exists: resp.Exists,
@@ -362,13 +388,14 @@ func main() {
 	storageDir := os.Args[4] // Path to the directory where BoltDB will store its data files
 	dbPath := filepath.Join(storageDir, "kvstore.db")
 	bucketName := "kvstore_bucket"
+	replicaId := 0 // todo: change it.
 
 	// Register with Manager to get partition ID
 	serverId, err := strconv.ParseInt(serverIdStr, 10, 32)
 	if err != nil {
 		log.Fatalf("Invalid server ID: %v", err)
 	}
-	partitionId := Register(ManagerAddr, int32(serverId))
+	partitionId := Register(ManagerAddr, int32(serverId)) // Verify that partitionId is same as one being initialized with like 0 as I'm using it to define nodeId.
 
 	// Ensure the storage directory exists
 	if err := os.MkdirAll(storageDir, 0755); err != nil {
@@ -419,7 +446,7 @@ func main() {
 		bucketName: bucketName,
 		responseCh: responseCh,
 	}
-	nodeID := fmt.Sprintf("%d.%d", serverId, partitionId)
+	nodeID := fmt.Sprintf("%d.%d", replicaId, partitionId)
 	raftNode := raft.NewRaftNode(nodeID, []string{}, stateMachine, db, "raft_log")
 	log.Printf("Initialized raft node: %s", raftNode.String())
 
@@ -428,6 +455,8 @@ func main() {
 		db:            db,
 		bucketName:    bucketName,
 		myPartitionId: partitionId,
+		replicaId:     int32(replicaId),
+		serverNodeId:  nodeID,
 		raftNode:      raftNode,
 		responseCh:    responseCh,
 	})
