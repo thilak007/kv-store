@@ -53,6 +53,30 @@ type Command struct {
 	EndKey string `json:"end_key,omitempty"` // Only for SCAN
 }
 
+/*
+	 NewCommand creates a Command with op and key, plus an optional third argument.
+	 For SCAN, the third argument is treated as EndKey; for other ops, it is Value.
+	 Examples:
+
+		GET/DELETE: NewCommand("GET", "k")
+		PUT/SWAP: 	NewCommand("PUT", "k", "v")
+		SCAN: 			NewCommand("SCAN", "k1", "k9")
+*/
+func NewCommand(op, key string, value ...string) *Command {
+	cmd := &Command{
+		Op:  op,
+		Key: key,
+	}
+	if len(value) > 0 {
+		if op == "SCAN" {
+			cmd.EndKey = value[0]
+		} else {
+			cmd.Value = value[0]
+		}
+	}
+	return cmd
+}
+
 // Serialize converts a Command to bytes for storage in a LogEntry.
 func (c *Command) Serialize() ([]byte, error) {
 	return json.Marshal(c)

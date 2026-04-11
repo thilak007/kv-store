@@ -28,19 +28,28 @@ var (
 	requestID uint64
 )
 
+type ResponseMessage struct {
+	Exists   bool
+	OldValue string
+	Err      error
+}
+
 type server struct {
 	pb.UnimplementedKVServiceServer
 	db            *bolt.DB
 	bucketName    string
 	myPartitionId int32
 	raftNode      *raft.RaftNode
+	responseCh    chan ResponseMessage
 }
 
 type kvStateMachine struct {
 	db         *bolt.DB
 	bucketName string
+	responseCh chan ResponseMessage
 }
 
+// This function is called from Apply goroutine thread
 func (sm *kvStateMachine) Apply(rawCmd []byte) error {
 	cmd, err := raft.DeserializeCommand(rawCmd)
 	if err != nil {
@@ -50,8 +59,19 @@ func (sm *kvStateMachine) Apply(rawCmd []byte) error {
 	switch cmd.Op {
 	case "SWAP":
 	case "PUT":
-		_, _, err := insertOrUpdateRecord(cmd.Key, cmd.Value, true, sm.db, sm.bucketName)
-		// todo: Add log to indicate that it successfully updated the record
+		exists, oldValue, err := insertOrUpdateRecord(cmd.Key, cmd.Value, sm.db, sm.bucketName)
+		if cmd.Op == "SWAP" {
+			// message for SWAP
+			log.Printf("[Inside Apply]: Successfully applied SWAP for key: %s, oldValue: %s, newValue: %s", cmd.Key, oldValue, cmd.Value)
+		} else {
+			log.Printf("[Inside Apply]: Successfully applied PUT for key: %s, exists: %t", cmd.Key, exists)
+		}
+		// Send response back to the waiting Put handler
+		sm.responseCh <- ResponseMessage{
+			Exists:   exists,
+			OldValue: oldValue,
+			Err:      err,
+		}
 		return err
 	case "DELETE":
 		// Todo
@@ -60,11 +80,7 @@ func (sm *kvStateMachine) Apply(rawCmd []byte) error {
 	return nil
 }
 
-func insertOrUpdateRecord(key string, value string, isAcquireLock bool, db *bolt.DB, bucketName string) (bool, string, error) {
-	if isAcquireLock {
-		mu.Lock()
-		defer mu.Unlock()
-	}
+func insertOrUpdateRecord(key string, value string, db *bolt.DB, bucketName string) (bool, string, error) {
 
 	oldvalue, exists := records[key]
 
@@ -105,18 +121,23 @@ func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, e
 		- Call apply from raft
 	*/
 
-	exists, _, err := insertOrUpdateRecord(key, value, false, s.db, s.bucketName)
+	var cmd *raft.Command = raft.NewCommand("PUT", key, value)
 
-	if err != nil {
-		log.Printf("[ReqID: %d] Failed to persist PUT to BoltDB: %v", reqID, err)
-		return nil, err
+	s.raftNode.ProposeCmd(cmd)
+
+	// Wait for the Apply thread to complete and send the response through the channel
+	resp := <-s.responseCh
+
+	if resp.Err != nil {
+		log.Printf("[ReqID: %d] Failed to persist PUT to BoltDB: %v", reqID, resp.Err)
+		return nil, resp.Err
 	}
 
-	log.Printf("[ReqID: %d.%d] Sent PUT from %s for key: %s and value: %s. AlreadyExists: %t", s.myPartitionId,
-		reqID, p.Addr.String(), in.Key, in.Value, exists)
+	log.Printf("[ReqID: %d.%d] Sent PUT from client %s for key: %s and value: %s. AlreadyExists: %t", s.myPartitionId,
+		reqID, p.Addr.String(), in.Key, in.Value, resp.Exists)
 
 	return &pb.PutResponse{
-		AlreadyExists: exists,
+		AlreadyExists: resp.Exists,
 	}, nil
 }
 
@@ -124,25 +145,33 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 	reqID := atomic.AddUint64(&requestID, 1)
 	mu.Lock()
 	defer mu.Unlock()
+
 	p, ok := peer.FromContext(ctx)
 	if ok {
 		log.Printf("[ReqID: %d.%d] Received SWAP from %s for key: %s and new value: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key, in.Value)
 	}
 
 	key := in.Key
-	newvalue := in.Value
-	exists, oldvalue, err := insertOrUpdateRecord(key, newvalue, false, s.db, s.bucketName)
+	value := in.Value
 
-	if err != nil {
-		log.Printf("[ReqID: %d] Failed to persist SWAP to BoltDB: %v", reqID, err)
-		return nil, err
+	var cmd *raft.Command = raft.NewCommand("SWAP", key, value)
+
+	s.raftNode.ProposeCmd(cmd)
+
+	// Wait for the Apply thread to complete and send the response through the channel
+	resp := <-s.responseCh
+
+	if resp.Err != nil {
+		log.Printf("[ReqID: %d] Failed to persist SWAP to BoltDB: %v", reqID, resp.Err)
+		return nil, resp.Err
 	}
 
-	log.Printf("[ReqID: %d.%d] Sent SWAP from %s for key: %s. OldValue: %s changed to NewValue: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key, oldvalue, newvalue)
+	log.Printf("[ReqID: %d.%d] Sent SWAP from client %s for key: %s. OldValue: %s changed to NewValue: %s", s.myPartitionId,
+		reqID, p.Addr.String(), in.Key, resp.OldValue, value)
 
 	return &pb.SwapResponse{
-		OldValue: oldvalue,
-		Exists:   exists,
+		OldValue: resp.OldValue,
+		Exists:   resp.Exists,
 	}, nil
 }
 
@@ -216,6 +245,13 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 
 	key := in.Key
 	_, exists := records[key]
+
+	if !exists {
+		// Don't have to replicate the log as the deletion of a non-existent key doesn't change state.
+		return &pb.DeleteResponse{
+			Exists: exists,
+		}, nil
+	}
 
 	// Persist to BoltDB
 	err := s.db.Update(func(tx *bolt.Tx) error {
@@ -346,9 +382,11 @@ func main() {
 	}
 
 	// Create a Raft node and initialize the KV state machine instance.
+	responseCh := make(chan ResponseMessage)
 	stateMachine := &kvStateMachine{
 		db:         db,
 		bucketName: bucketName,
+		responseCh: responseCh,
 	}
 	nodeID := fmt.Sprintf("%d.%d", serverId, partitionId)
 	raftNode := raft.NewRaftNode(nodeID, []string{}, stateMachine, db, "raft_log")
@@ -360,6 +398,7 @@ func main() {
 		bucketName:    bucketName,
 		myPartitionId: partitionId,
 		raftNode:      raftNode,
+		responseCh:    responseCh,
 	})
 
 	log.Printf("gRPC server listening at %v", lis.Addr())
