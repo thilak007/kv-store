@@ -3,6 +3,7 @@
 ## Server side 
 4. Redirect if write/read request comes to follower:
 
+(Store leader ID: )
 /*
 	Todo:
 	- If follower, then return with leader ID
