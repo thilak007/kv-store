@@ -63,28 +63,39 @@ message PutResponse{
 message SwapResponse{
   string old_value = 1; // if exists
   bool exists = 2;
+  string leader_id = 3;
 }
 
 message GetResponse{
   string value = 1; // if exists
   bool exists = 2;
+  string leader_id = 3;
 }
 
 message ScanResponse {
   string key = 1;
   string value = 2;
+  string leader_id = 3;
 }
 
 message DeleteResponse{
   bool exists = 1;
+  string leader_id = 2;
 }
 
 message RegisterResponse{
   int32 partition_id = 1;
   bool success = 2;
+  string leader_id = 3;
+}
+
+// Each partition maps to multiple replica addresses
+message PartitionEntry {
+  repeated string addresses = 1;
 }
 
 message PartitionMapResponse{
   int32 num_partitions = 1;
-  map<int32, string> partition_map = 2;
+  map<int32, PartitionEntry> partition_map = 2;
+  string leader_id = 3;
 }
