@@ -159,8 +159,7 @@ func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, e
 	if !isLeader {
 		log.Printf("[ReqID: %s--%d] Rejecting PUT from %s. Not the leader; Redirecting to leader: %s", s.serverNodeId, reqID, p.Addr.String(), leaderId)
 		return &pb.PutResponse{
-			AlreadyExists: false,
-			LeaderId:      leaderId,
+			LeaderId: leaderId,
 		}, nil
 	}
 
@@ -202,8 +201,6 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 	if !isLeader {
 		log.Printf("[ReqID: %s--%d] Rejecting SWAP from %s. Not the leader; Redirecting to leader: %s", s.serverNodeId, reqID, p.Addr.String(), leaderId)
 		return &pb.SwapResponse{
-			OldValue: "",
-			Exists:   false,
 			LeaderId: leaderId,
 		}, nil
 	}
@@ -242,14 +239,24 @@ func (s *server) Get(ctx context.Context, in *pb.GetRequest) (*pb.GetResponse, e
 		log.Printf("[ReqID: %s--%d] Received GET from %s for key: %s", s.serverNodeId, reqID, p.Addr.String(), in.Key)
 	}
 
+	// Check if Leader
+	isLeader, leaderId := s.isLeader()
+	if !isLeader {
+		log.Printf("[ReqID: %s--%d] Rejecting GET from %s. Not the leader; Redirecting to leader: %s", s.serverNodeId, reqID, p.Addr.String(), leaderId)
+		return &pb.GetResponse{
+			LeaderId: leaderId,
+		}, nil
+	}
+
 	key := in.Key
 	value, exists := records[key]
 
 	log.Printf("[ReqID: %s--%d] Sent GET from %s for key: %s. Got value: %s, exists: %t", s.serverNodeId, reqID, p.Addr.String(), in.Key, value, exists)
 
 	return &pb.GetResponse{
-		Value:  value,
-		Exists: exists,
+		Value:    value,
+		Exists:   exists,
+		LeaderId: leaderId,
 	}, nil
 }
 
@@ -258,6 +265,14 @@ func (s *server) Scan(in *pb.ScanRequest, stream pb.KVService_ScanServer) error 
 	p, ok := peer.FromContext(stream.Context())
 	if ok {
 		log.Printf("[ReqID: %s--%d] Received SCAN from %s from key: %s to key: %s", s.serverNodeId, reqID, p.Addr.String(), in.StartKey, in.EndKey)
+	}
+
+	// Check if Leader
+	isLeader, leaderId := s.isLeader()
+	if !isLeader {
+		log.Printf("[ReqID: %s--%d] Rejecting SCAN from %s. Not the leader; Redirecting to leader: %s", s.serverNodeId, reqID, p.Addr.String(), leaderId)
+		stream.Send(&pb.ScanResponse{LeaderId: leaderId})
+		return nil
 	}
 
 	startKey := in.StartKey
@@ -281,8 +296,9 @@ func (s *server) Scan(in *pb.ScanRequest, stream pb.KVService_ScanServer) error 
 	sort.Strings(keys)
 	for _, key := range keys {
 		ScanRes := &pb.ScanResponse{
-			Key:   key,
-			Value: snapshot[key],
+			Key:      key,
+			Value:    snapshot[key],
+			LeaderId: leaderId,
 		}
 		log.Printf("[ReqID: %s--%d] Sent SCAN from %s from key: %s to key: %s. Key: %s, Value: %s", s.serverNodeId, reqID, p.Addr.String(), in.StartKey, in.EndKey, key, snapshot[key])
 		if err := stream.Send(ScanRes); err != nil {
@@ -302,6 +318,15 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 		log.Printf("[ReqID: %s--%d] Received DELETE from %s for key: %s", s.serverNodeId, reqID, p.Addr.String(), in.Key)
 	}
 
+	// Check if Leader
+	isLeader, leaderId := s.isLeader()
+	if !isLeader {
+		log.Printf("[ReqID: %s--%d] Rejecting DELETE from %s. Not the leader; Redirecting to leader: %s", s.serverNodeId, reqID, p.Addr.String(), leaderId)
+		return &pb.DeleteResponse{
+			LeaderId: leaderId,
+		}, nil
+	}
+
 	key := in.Key
 
 	_, exists := records[key]
@@ -309,7 +334,8 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 	if !exists {
 		// Don't have to replicate the log as the deletion of a non-existent key doesn't change state.
 		return &pb.DeleteResponse{
-			Exists: exists,
+			Exists:   exists,
+			LeaderId: leaderId,
 		}, nil
 	}
 
@@ -328,7 +354,8 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 	log.Printf("[ReqID: %s--%d] Sent DELETE from %s for key: %s. Exists: %t", s.serverNodeId, reqID, p.Addr.String(), in.Key, resp.Exists)
 
 	return &pb.DeleteResponse{
-		Exists: resp.Exists,
+		Exists:   resp.Exists,
+		LeaderId: leaderId,
 	}, nil
 }
 
