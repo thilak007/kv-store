@@ -62,14 +62,19 @@ func (sm *kvStateMachine) Apply(rawCmd []byte) error {
 
 	switch cmd.Op {
 	case "SWAP":
+		exists, oldValue, err := insertOrUpdateRecord(cmd.Key, cmd.Value, sm.db, sm.bucketName)
+		log.Printf("[Inside Apply]: Completed SWAP for key: %s, oldValue: %s, newValue: %s, error: %v", cmd.Key, oldValue, cmd.Value, err)
+
+		// Send response back to the waiting Swap handler
+		sm.responseCh <- ResponseMessage{
+			Exists:   exists,
+			OldValue: oldValue,
+			Err:      err,
+		}
+		return err
 	case "PUT":
 		exists, oldValue, err := insertOrUpdateRecord(cmd.Key, cmd.Value, sm.db, sm.bucketName)
-		if cmd.Op == "SWAP" {
-			// message for SWAP
-			log.Printf("[Inside Apply]: Completed SWAP for key: %s, oldValue: %s, newValue: %s, error: %v", cmd.Key, oldValue, cmd.Value, err)
-		} else {
-			log.Printf("[Inside Apply]: Completed PUT for key: %s, exists: %t, error: %v", cmd.Key, exists, err)
-		}
+		log.Printf("[Inside Apply]: Completed PUT for key: %s, exists: %t, error: %v", cmd.Key, exists, err)
 		// Send response back to the waiting Put handler
 		sm.responseCh <- ResponseMessage{
 			Exists:   exists,
