@@ -13,6 +13,11 @@ type raftService struct {
 	node *RaftNode
 }
 
+// NewRaftService returns a Raft gRPC server implementation bound to a RaftNode.
+func NewRaftService(node *RaftNode) pb.RaftServer {
+	return &raftService{node: node}
+}
+
 func (s *raftService) AppendEntries(ctx context.Context, in *pb.AppendRequest) (*pb.AppendResponse, error) {
 	s.node.raftmu.Lock()
 	defer s.node.raftmu.Unlock()
@@ -40,6 +45,8 @@ func (s *raftService) AppendEntries(ctx context.Context, in *pb.AppendRequest) (
 			MatchIndex:    0,
 		}, nil
 	}
+
+	s.node.leaderId = in.LeaderId
 
 	// Update term if leader's term is newer
 	if in.Term > s.node.currentTerm {

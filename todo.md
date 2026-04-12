@@ -1,9 +1,6 @@
 # Todo p3
 
 ## Server side 
-1. Add success logs,
-2. Add channel to send back response to client from the server
-3. Implement Delete
 
 ## Client Side:
 1. Update args based on just file expectation
@@ -15,3 +12,9 @@
 
 1. Registration of multiple servers for a single partition.
 Note: We don't support dynamic addition of servers to a cluster in between. 
+
+## bugs:
+
+- Why is there a  100  when clearing old logs?
+
+https://github.com/thilak007/kv-store/blob/c877d368186083f95022d8280e01c379891ab264/go_grpc/raft/persistence.go#L65  

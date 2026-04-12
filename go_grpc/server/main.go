@@ -5,12 +5,14 @@ import (
 	"fmt"
 	pb "go_grpc/proto"
 	"go_grpc/raft"
+	raftpb "go_grpc/raft/proto"
 	"log"
 	"net"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,19 +30,30 @@ var (
 	requestID uint64
 )
 
+type ResponseMessage struct {
+	Exists   bool
+	OldValue string
+	Err      error
+}
+
 type server struct {
 	pb.UnimplementedKVServiceServer
 	db            *bolt.DB
 	bucketName    string
+	replicaId     int32
 	myPartitionId int32
 	raftNode      *raft.RaftNode
+	responseCh    chan ResponseMessage
+	serverNodeId  string // "<replicaID.partitionID>"
 }
 
 type kvStateMachine struct {
 	db         *bolt.DB
 	bucketName string
+	responseCh chan ResponseMessage
 }
 
+// This function is called from Apply goroutine thread
 func (sm *kvStateMachine) Apply(rawCmd []byte) error {
 	cmd, err := raft.DeserializeCommand(rawCmd)
 	if err != nil {
@@ -50,21 +63,34 @@ func (sm *kvStateMachine) Apply(rawCmd []byte) error {
 	switch cmd.Op {
 	case "SWAP":
 	case "PUT":
-		_, _, err := insertOrUpdateRecord(cmd.Key, cmd.Value, true, sm.db, sm.bucketName)
-		// todo: Add log to indicate that it successfully updated the record
+		exists, oldValue, err := insertOrUpdateRecord(cmd.Key, cmd.Value, sm.db, sm.bucketName)
+		if cmd.Op == "SWAP" {
+			// message for SWAP
+			log.Printf("[Inside Apply]: Completed SWAP for key: %s, oldValue: %s, newValue: %s, error: %v", cmd.Key, oldValue, cmd.Value, err)
+		} else {
+			log.Printf("[Inside Apply]: Completed PUT for key: %s, exists: %t, error: %v", cmd.Key, exists, err)
+		}
+		// Send response back to the waiting Put handler
+		sm.responseCh <- ResponseMessage{
+			Exists:   exists,
+			OldValue: oldValue,
+			Err:      err,
+		}
 		return err
 	case "DELETE":
-		// Todo
+		exists, err := deleteRecord(cmd.Key, sm.db, sm.bucketName)
+		log.Printf("[Inside Apply]: Completed DELETE for key: %s, exists: %t, error: %v", cmd.Key, exists, err)
+		sm.responseCh <- ResponseMessage{
+			Exists: exists,
+			Err:    err,
+		}
+		return err
 	}
 
-	return nil
+	return fmt.Errorf("Invalid command: %s", cmd.Op)
 }
 
-func insertOrUpdateRecord(key string, value string, isAcquireLock bool, db *bolt.DB, bucketName string) (bool, string, error) {
-	if isAcquireLock {
-		mu.Lock()
-		defer mu.Unlock()
-	}
+func insertOrUpdateRecord(key string, value string, db *bolt.DB, bucketName string) (bool, string, error) {
 
 	oldvalue, exists := records[key]
 
@@ -84,6 +110,42 @@ func insertOrUpdateRecord(key string, value string, isAcquireLock bool, db *bolt
 	return exists, oldvalue, nil
 }
 
+func deleteRecord(key string, db *bolt.DB, bucketName string) (bool, error) {
+	_, exists := records[key]
+
+	// The deleteRecord is always called for an existing key, this is just an additional check.
+	if !exists {
+		return false, nil
+	}
+
+	// Persist to BoltDB
+	err := db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketName))
+		return b.Delete([]byte(key))
+	})
+
+	if err != nil {
+		log.Printf("Failed to delete record from BoltDB: %v", err)
+		return exists, err
+	}
+
+	// Update in-memory map
+	if exists {
+		delete(records, key)
+	}
+	return exists, nil
+}
+
+func (s *server) isLeader() (bool, string) {
+	role, leaderId := s.raftNode.GetState()
+	return role == raft.Leader, leaderId
+}
+
+/*
+1) If follower or candidate, then return with leader ID
+2a) If leader, propose for log replication - call raft library function.
+2b) Call apply from raft
+*/
 func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, error) {
 	reqID := atomic.AddUint64(&requestID, 1)
 	mu.Lock()
@@ -92,31 +154,38 @@ func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, e
 	p, ok := peer.FromContext(ctx)
 
 	if ok {
-		log.Printf("[ReqID: %d.%d] Received PUT from %s for key: %s and value: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key, in.Value)
+		log.Printf("[ReqID: %s--%d] Received PUT from %s for key: %s and value: %s", s.serverNodeId, reqID, p.Addr.String(), in.Key, in.Value)
+	}
+
+	isLeader, leaderId := s.isLeader()
+	if !isLeader {
+		log.Printf("[ReqID: %s--%d] Rejecting PUT from %s. Not the leader; Redirecting to leader: %s", s.serverNodeId, reqID, p.Addr.String(), leaderId)
+		return &pb.PutResponse{
+			LeaderId: leaderId,
+		}, nil
 	}
 
 	key := in.Key
 	value := in.Value
 
-	/*
-		Todo:
-		- If follower, then return with leader ID
-		- If leader, propose for log replication - call raft library function.
-		- Call apply from raft
-	*/
+	var cmd *raft.Command = raft.NewCommand("PUT", key, value)
 
-	exists, _, err := insertOrUpdateRecord(key, value, false, s.db, s.bucketName)
+	s.raftNode.ProposeCmd(cmd)
 
-	if err != nil {
-		log.Printf("[ReqID: %d] Failed to persist PUT to BoltDB: %v", reqID, err)
-		return nil, err
+	// Wait for the Apply thread to complete and send the response through the channel
+	resp := <-s.responseCh
+
+	if resp.Err != nil {
+		log.Printf("[ReqID: %d] Failed to persist PUT to BoltDB: %v", reqID, resp.Err)
+		return nil, resp.Err
 	}
 
-	log.Printf("[ReqID: %d.%d] Sent PUT from %s for key: %s and value: %s. AlreadyExists: %t", s.myPartitionId,
-		reqID, p.Addr.String(), in.Key, in.Value, exists)
+	log.Printf("[ReqID: %s--%d] Sent PUT from client %s for key: %s and value: %s. AlreadyExists: %t", s.serverNodeId,
+		reqID, p.Addr.String(), in.Key, in.Value, resp.Exists)
 
 	return &pb.PutResponse{
-		AlreadyExists: exists,
+		AlreadyExists: resp.Exists,
+		LeaderId:      leaderId,
 	}, nil
 }
 
@@ -124,25 +193,42 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 	reqID := atomic.AddUint64(&requestID, 1)
 	mu.Lock()
 	defer mu.Unlock()
+
 	p, ok := peer.FromContext(ctx)
 	if ok {
-		log.Printf("[ReqID: %d.%d] Received SWAP from %s for key: %s and new value: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key, in.Value)
+		log.Printf("[ReqID: %s--%d] Received SWAP from %s for key: %s and new value: %s", s.serverNodeId, reqID, p.Addr.String(), in.Key, in.Value)
+	}
+
+	isLeader, leaderId := s.isLeader()
+	if !isLeader {
+		log.Printf("[ReqID: %s--%d] Rejecting SWAP from %s. Not the leader; Redirecting to leader: %s", s.serverNodeId, reqID, p.Addr.String(), leaderId)
+		return &pb.SwapResponse{
+			LeaderId: leaderId,
+		}, nil
 	}
 
 	key := in.Key
-	newvalue := in.Value
-	exists, oldvalue, err := insertOrUpdateRecord(key, newvalue, false, s.db, s.bucketName)
+	value := in.Value
 
-	if err != nil {
-		log.Printf("[ReqID: %d] Failed to persist SWAP to BoltDB: %v", reqID, err)
-		return nil, err
+	var cmd *raft.Command = raft.NewCommand("SWAP", key, value)
+
+	s.raftNode.ProposeCmd(cmd)
+
+	// Wait for the Apply thread to complete and send the response through the channel
+	resp := <-s.responseCh
+
+	if resp.Err != nil {
+		log.Printf("[ReqID: %d] Failed to persist SWAP to BoltDB: %v", reqID, resp.Err)
+		return nil, resp.Err
 	}
 
-	log.Printf("[ReqID: %d.%d] Sent SWAP from %s for key: %s. OldValue: %s changed to NewValue: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key, oldvalue, newvalue)
+	log.Printf("[ReqID: %s--%d] Sent SWAP from client %s for key: %s. OldValue: %s changed to NewValue: %s", s.serverNodeId,
+		reqID, p.Addr.String(), in.Key, resp.OldValue, value)
 
 	return &pb.SwapResponse{
-		OldValue: oldvalue,
-		Exists:   exists,
+		OldValue: resp.OldValue,
+		Exists:   resp.Exists,
+		LeaderId: leaderId,
 	}, nil
 }
 
@@ -152,17 +238,27 @@ func (s *server) Get(ctx context.Context, in *pb.GetRequest) (*pb.GetResponse, e
 	defer mu.Unlock()
 	p, ok := peer.FromContext(ctx)
 	if ok {
-		log.Printf("[ReqID: %d.%d] Received GET from %s for key: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key)
+		log.Printf("[ReqID: %s--%d] Received GET from %s for key: %s", s.serverNodeId, reqID, p.Addr.String(), in.Key)
+	}
+
+	// Check if Leader
+	isLeader, leaderId := s.isLeader()
+	if !isLeader {
+		log.Printf("[ReqID: %s--%d] Rejecting GET from %s. Not the leader; Redirecting to leader: %s", s.serverNodeId, reqID, p.Addr.String(), leaderId)
+		return &pb.GetResponse{
+			LeaderId: leaderId,
+		}, nil
 	}
 
 	key := in.Key
 	value, exists := records[key]
 
-	log.Printf("[ReqID: %d.%d] Sent GET from %s for key: %s. Got value: %s, exists: %t", s.myPartitionId, reqID, p.Addr.String(), in.Key, value, exists)
+	log.Printf("[ReqID: %s--%d] Sent GET from %s for key: %s. Got value: %s, exists: %t", s.serverNodeId, reqID, p.Addr.String(), in.Key, value, exists)
 
 	return &pb.GetResponse{
-		Value:  value,
-		Exists: exists,
+		Value:    value,
+		Exists:   exists,
+		LeaderId: leaderId,
 	}, nil
 }
 
@@ -170,7 +266,15 @@ func (s *server) Scan(in *pb.ScanRequest, stream pb.KVService_ScanServer) error 
 	reqID := atomic.AddUint64(&requestID, 1)
 	p, ok := peer.FromContext(stream.Context())
 	if ok {
-		log.Printf("[ReqID: %d.%d] Received SCAN from %s from key: %s to key: %s", s.myPartitionId, reqID, p.Addr.String(), in.StartKey, in.EndKey)
+		log.Printf("[ReqID: %s--%d] Received SCAN from %s from key: %s to key: %s", s.serverNodeId, reqID, p.Addr.String(), in.StartKey, in.EndKey)
+	}
+
+	// Check if Leader
+	isLeader, leaderId := s.isLeader()
+	if !isLeader {
+		log.Printf("[ReqID: %s--%d] Rejecting SCAN from %s. Not the leader; Redirecting to leader: %s", s.serverNodeId, reqID, p.Addr.String(), leaderId)
+		stream.Send(&pb.ScanResponse{LeaderId: leaderId})
+		return nil
 	}
 
 	startKey := in.StartKey
@@ -194,10 +298,11 @@ func (s *server) Scan(in *pb.ScanRequest, stream pb.KVService_ScanServer) error 
 	sort.Strings(keys)
 	for _, key := range keys {
 		ScanRes := &pb.ScanResponse{
-			Key:   key,
-			Value: snapshot[key],
+			Key:      key,
+			Value:    snapshot[key],
+			LeaderId: leaderId,
 		}
-		log.Printf("[ReqID: %d.%d] Sent SCAN from %s from key: %s to key: %s. Key: %s, Value: %s", s.myPartitionId, reqID, p.Addr.String(), in.StartKey, in.EndKey, key, snapshot[key])
+		log.Printf("[ReqID: %s--%d] Sent SCAN from %s from key: %s to key: %s. Key: %s, Value: %s", s.serverNodeId, reqID, p.Addr.String(), in.StartKey, in.EndKey, key, snapshot[key])
 		if err := stream.Send(ScanRes); err != nil {
 			return err
 		}
@@ -209,33 +314,50 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 	reqID := atomic.AddUint64(&requestID, 1)
 	mu.Lock()
 	defer mu.Unlock()
+
 	p, ok := peer.FromContext(ctx)
 	if ok {
-		log.Printf("[ReqID: %d.%d] Received DELETE from %s for key: %s", s.myPartitionId, reqID, p.Addr.String(), in.Key)
+		log.Printf("[ReqID: %s--%d] Received DELETE from %s for key: %s", s.serverNodeId, reqID, p.Addr.String(), in.Key)
+	}
+
+	// Check if Leader
+	isLeader, leaderId := s.isLeader()
+	if !isLeader {
+		log.Printf("[ReqID: %s--%d] Rejecting DELETE from %s. Not the leader; Redirecting to leader: %s", s.serverNodeId, reqID, p.Addr.String(), leaderId)
+		return &pb.DeleteResponse{
+			LeaderId: leaderId,
+		}, nil
 	}
 
 	key := in.Key
+
 	_, exists := records[key]
 
-	// Persist to BoltDB
-	err := s.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(s.bucketName))
-		return b.Delete([]byte(key))
-	})
-
-	if err != nil {
-		log.Printf("[ReqID: %d] Failed to persist DELETE to BoltDB: %v", reqID, err)
-		return nil, err
+	if !exists {
+		// Don't have to replicate the log as the deletion of a non-existent key doesn't change state.
+		return &pb.DeleteResponse{
+			Exists:   exists,
+			LeaderId: leaderId,
+		}, nil
 	}
 
-	if exists {
-		delete(records, key)
+	var cmd *raft.Command = raft.NewCommand("DELETE", key, "")
+
+	s.raftNode.ProposeCmd(cmd)
+
+	// Wait for the Apply thread to complete and send the response through the channel
+	resp := <-s.responseCh
+
+	if resp.Err != nil {
+		log.Printf("[ReqID: %d] Failed to persist DELETE to BoltDB: %v", reqID, resp.Err)
+		return nil, resp.Err
 	}
 
-	log.Printf("[ReqID: %d.%d] Sent DELETE from %s for key: %s. Exists: %t", s.myPartitionId, reqID, p.Addr.String(), in.Key, exists)
+	log.Printf("[ReqID: %s--%d] Sent DELETE from %s for key: %s. Exists: %t", s.serverNodeId, reqID, p.Addr.String(), in.Key, resp.Exists)
 
 	return &pb.DeleteResponse{
-		Exists: exists,
+		Exists:   resp.Exists,
+		LeaderId: leaderId,
 	}, nil
 }
 
@@ -280,28 +402,94 @@ func Register(ManagerAddr string, serverId int32) int32 {
 	}
 }
 
-func main() {
-	if len(os.Args) < 5 {
-		log.Fatalf("Usage: %s <manager_address> <listen_address> <server_id> <storage_dir>", os.Args[0])
+func createListener(listenAddr string, serviceName string) net.Listener {
+	lis, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		log.Fatalf("Failed to create listener for %s service at %s: %v", serviceName, listenAddr, err)
+	}
+	log.Printf("Created listener on %s\n for %s service", listenAddr, serviceName)
+	return lis
+}
+
+func parseAddressList(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "none" {
+		return nil
 	}
 
-	fmt.Println("Inside main ----->")
+	parts := strings.Split(raw, ",")
+	addrs := make([]string, 0, len(parts))
+	for _, p := range parts {
+		addr := strings.TrimSpace(p)
+		if addr != "" {
+			addrs = append(addrs, addr)
+		}
+	}
+	return addrs
+}
+
+func buildPeerNodeIDs(replicaId int, partitionId int32, peerCount int) []string {
+	totalReplicas := peerCount + 1
+	peerIDs := make([]string, 0, peerCount)
+	for rid := 0; rid < totalReplicas; rid++ {
+		if rid == replicaId {
+			continue
+		}
+		peerIDs = append(peerIDs, fmt.Sprintf("%d.%d", rid, partitionId))
+	}
+	return peerIDs
+}
+
+func buildPeerClients(peerIDs []string, peerAddrs []string) map[string]raftpb.RaftClient {
+	if len(peerIDs) != len(peerAddrs) {
+		log.Fatalf("peer ID count (%d) does not match peer address count (%d)", len(peerIDs), len(peerAddrs))
+	}
+
+	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	peerClients := make(map[string]raftpb.RaftClient, len(peerIDs))
+	for i, peerID := range peerIDs {
+		conn, err := grpc.NewClient(peerAddrs[i], opts...)
+		if err != nil {
+			log.Fatalf("failed to connect to peer %s at %s: %v", peerID, peerAddrs[i], err)
+		}
+		peerClients[peerID] = raftpb.NewRaftClient(conn)
+		log.Printf("Connected peer client %s -> %s", peerID, peerAddrs[i])
+	}
+	return peerClients
+}
+
+/*
+p2 call:
+./bin/server {{manager}} {{api_ip}}:{{api_port}} {{id}} {{backer_path}}
+
+p3 call:
+./yourserver --partition_id 0 --replica_id 0 --manager_addrs 1.2.3.4:3666,8.7.6.5:3667,12.11.10.9:3668 --api_listen 0.0.0.0:3777 --p2p_listen 0.0.0.0:3707 --peer_addrs 5.6.7.8:3708,9.10.11.12:3709 --backer_path ./backer.s0.0
+*/
+func main() {
+	if len(os.Args) < 8 {
+		log.Fatalf("Usage: %s <partition_id> <replica_id> <manager_addrs> <api_listen_addrs> <p2p_listen_addrs> <peer_addrs> <storage_dir>", os.Args[0])
+	}
+
+	fmt.Println("Booting up the server for the KV store...")
+
+	partitionId, _ := strconv.ParseInt(os.Args[1], 10, 32)
+	replicaId, _ := strconv.ParseInt(os.Args[2], 10, 32)
 
 	// Args
-	ManagerAddr := os.Args[1]
-	listenAddr := os.Args[2]
-	log.Printf("listening address: %s\n", listenAddr)
-	serverIdStr := os.Args[3]
-	storageDir := os.Args[4] // Path to the directory where BoltDB will store its data files
+	// ManagerAddr := os.Args[3] // Address of the manager: chose the index 0.
+	apiListenAddr := os.Args[4]
+	raftListenAddr := os.Args[5]
+	peerAddrsRaw := os.Args[6]
+	peerAddrs := parseAddressList(peerAddrsRaw)
+
+	storageDir := os.Args[7] // Path to the directory where BoltDB will store its data files
 	dbPath := filepath.Join(storageDir, "kvstore.db")
 	bucketName := "kvstore_bucket"
+	// BoltDB bucket for Raft log and it's state persistence
+	raftStateBucket := "raft_log_bucket"
 
 	// Register with Manager to get partition ID
-	serverId, err := strconv.ParseInt(serverIdStr, 10, 32)
-	if err != nil {
-		log.Fatalf("Invalid server ID: %v", err)
-	}
-	partitionId := Register(ManagerAddr, int32(serverId))
+	// partitionId := Register(ManagerAddr, int32(serverId)) // Verify that partitionId is same as one being initialized with like 0 as I'm using it to define nodeId.
 
 	// Ensure the storage directory exists
 	if err := os.MkdirAll(storageDir, 0755); err != nil {
@@ -339,28 +527,49 @@ func main() {
 	}
 	log.Printf("Loaded %d key-value pairs from persistent storage", len(records))
 
-	fmt.Printf("Server listening on %s\n", listenAddr)
-	lis, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		log.Fatalf("Failed to listen: %v", err)
-	}
-
 	// Create a Raft node and initialize the KV state machine instance.
+	responseCh := make(chan ResponseMessage)
 	stateMachine := &kvStateMachine{
 		db:         db,
 		bucketName: bucketName,
+		responseCh: responseCh,
 	}
-	nodeID := fmt.Sprintf("%d.%d", serverId, partitionId)
-	raftNode := raft.NewRaftNode(nodeID, []string{}, stateMachine, db, "raft_log")
+	nodeID := fmt.Sprintf("%d.%d", replicaId, partitionId)
+	peerNodeIDs := buildPeerNodeIDs(int(replicaId), int32(partitionId), len(peerAddrs))
+	peerClients := buildPeerClients(peerNodeIDs, peerAddrs)
+	raftNode := raft.NewRaftNode(nodeID, peerNodeIDs, stateMachine, db, raftStateBucket, peerClients)
+	// Load persisted Raft state (currentTerm, votedFor, log entries) from BoltDB
+	if err := raftNode.LoadState(); err != nil {
+		log.Fatalf("failed to load raft state: %v", err)
+	}
 	log.Printf("Initialized raft node: %s", raftNode.String())
+
+	// Start listening for KV Store RPC requests and Raft RPCs
+	lis := createListener(apiListenAddr, "Kvstore APIs")
+	raftlistener := createListener(raftListenAddr, "Raft")
 
 	s := grpc.NewServer()
 	pb.RegisterKVServiceServer(s, &server{
 		db:            db,
 		bucketName:    bucketName,
-		myPartitionId: partitionId,
+		myPartitionId: int32(partitionId),
+		replicaId:     int32(replicaId),
+		serverNodeId:  nodeID,
 		raftNode:      raftNode,
+		responseCh:    responseCh,
 	})
+
+	raftGRPCServer := grpc.NewServer()
+	raftpb.RegisterRaftServer(raftGRPCServer, raft.NewRaftService(raftNode))
+
+	go func() {
+		log.Printf("Raft gRPC server listening at %v", raftlistener.Addr())
+		if err := raftGRPCServer.Serve(raftlistener); err != nil {
+			log.Fatalf("failed to serve raft gRPC server: %v", err)
+		}
+	}()
+
+	raftNode.Start()
 
 	log.Printf("gRPC server listening at %v", lis.Addr())
 	if err := s.Serve(lis); err != nil {

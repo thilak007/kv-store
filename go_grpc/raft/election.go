@@ -63,9 +63,10 @@ func (rf *RaftNode) becomeCandidate() {
 
 func (rf *RaftNode) becomeLeader() {
 	rf.role = Leader
+	rf.leaderId = rf.nodeId
 	rf.votes = 0
 
-	log.Printf("[Node %s] LEADER ELECTED (term %d)", rf.nodeId, rf.currentTerm)
+	log.Printf("[Node %s] has been elected leader for term %d", rf.nodeId, rf.currentTerm)
 
 	// Initialize leader volatile state
 	for _, peer := range rf.peers {
