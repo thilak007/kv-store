@@ -5,6 +5,7 @@ import (
 	"fmt"
 	pb "go_grpc/proto"
 	"go_grpc/raft"
+	raftpb "go_grpc/raft/proto"
 	"log"
 	"net"
 	"os"
@@ -400,6 +401,15 @@ func Register(ManagerAddr string, serverId int32) int32 {
 	}
 }
 
+func createListener(listenAddr string, serviceName string) net.Listener {
+	lis, err := net.Listen("tcp", listenAddr)
+	if err != nil {
+		log.Fatalf("Failed to create listener for %s service at %s: %v", serviceName, listenAddr, err)
+	}
+	log.Printf("Created listener on %s\n for %s service", listenAddr, serviceName)
+	return lis
+}
+
 /*
 p2 call:
 ./bin/server {{manager}} {{api_ip}}:{{api_port}} {{id}} {{backer_path}}
@@ -407,7 +417,6 @@ p2 call:
 p3 call:
 ./yourserver --partition_id 0 --replica_id 0 --manager_addrs 1.2.3.4:3666,8.7.6.5:3667,12.11.10.9:3668 --api_listen 0.0.0.0:3777 --p2p_listen 0.0.0.0:3707 --peer_addrs 5.6.7.8:3708,9.10.11.12:3709 --backer_path ./backer.s0.0
 */
-
 func main() {
 	if len(os.Args) < 8 {
 		log.Fatalf("Usage: %s <partition_id> <replica_id> <manager_addrs> <api_listen_addrs> <p2p_listen_addrs> <peer_addrs> <storage_dir>", os.Args[0])
@@ -420,8 +429,8 @@ func main() {
 
 	// Args
 	// ManagerAddr := os.Args[3] // Address of the manager: chose the index 0.
-	listenAddr := os.Args[4]
-	log.Printf("listening address: %s\n", listenAddr)
+	apiListenAddr := os.Args[4]
+	raftListenAddr := os.Args[5]
 
 	storageDir := os.Args[7] // Path to the directory where BoltDB will store its data files
 	dbPath := filepath.Join(storageDir, "kvstore.db")
@@ -466,12 +475,6 @@ func main() {
 	}
 	log.Printf("Loaded %d key-value pairs from persistent storage", len(records))
 
-	fmt.Printf("Server listening on %s\n", listenAddr)
-	lis, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		log.Fatalf("Failed to listen: %v", err)
-	}
-
 	// Create a Raft node and initialize the KV state machine instance.
 	responseCh := make(chan ResponseMessage)
 	stateMachine := &kvStateMachine{
@@ -484,6 +487,10 @@ func main() {
 	raftNode := raft.NewRaftNode(nodeID, []string{}, stateMachine, db, "raft_log")
 	log.Printf("Initialized raft node: %s", raftNode.String())
 
+	// Start listening for KV Store RPC requests and Raft RPCs
+	lis := createListener(apiListenAddr, "Kvstore APIs")
+	raftlistener := createListener(raftListenAddr, "Raft")
+
 	s := grpc.NewServer()
 	pb.RegisterKVServiceServer(s, &server{
 		db:            db,
@@ -494,6 +501,18 @@ func main() {
 		raftNode:      raftNode,
 		responseCh:    responseCh,
 	})
+
+	raftGRPCServer := grpc.NewServer()
+	raftpb.RegisterRaftServer(raftGRPCServer, raft.NewRaftService(raftNode))
+
+	go func() {
+		log.Printf("Raft gRPC server listening at %v", raftlistener.Addr())
+		if err := raftGRPCServer.Serve(raftlistener); err != nil {
+			log.Fatalf("failed to serve raft gRPC server: %v", err)
+		}
+	}()
+
+	raftNode.Start()
 
 	log.Printf("gRPC server listening at %v", lis.Addr())
 	if err := s.Serve(lis); err != nil {
