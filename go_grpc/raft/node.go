@@ -2,8 +2,8 @@ package raft
 
 import (
 	"fmt"
-	"log"
 	pb "go_grpc/raft/proto"
+	"log"
 	"sync"
 
 	bolt "go.etcd.io/bbolt"
@@ -70,8 +70,9 @@ type RaftNode struct {
 	matchIndex map[string]uint64 // For each peer: highest log entry known replicated
 
 	// ── Configuration ─────────────────────────────────────────────
-	nodeId string   // This node's unique identifier (e.g., "0.0, <serverID.partitionID>" )
-	peers  []string // Peer node identifiers (e.g., ["0.1", "0.2"])
+	nodeId   string   // This node's unique identifier (e.g., "1.0, <replicaID.partitionID>" ) Here severID is the replica ID instead of IP address.
+	peers    []string // Peer node identifiers (e.g., ["0.1", "0.2"])
+	leaderId string   // Current leader's ID (for redirecting clients)
 
 	// ── State Machine & Storage ───────────────────────────────────
 	sm         StateMachine // Interface to apply committed commands to the KV store
@@ -110,10 +111,10 @@ func NewRaftNode(id string, peers []string, kvsm StateMachine, db *bolt.DB, raft
 }
 
 // GetState returns a snapshot of the node's current state for debugging.
-func (rf *RaftNode) GetState() (term uint64, role NodeRole, logLen int) {
+func (rf *RaftNode) GetState() (role NodeRole, leaderId string) {
 	rf.raftmu.Lock()
 	defer rf.raftmu.Unlock()
-	return rf.currentTerm, rf.role, rf.log.Len()
+	return rf.role, rf.leaderId
 }
 
 // Start launches all background goroutines for the Raft node.

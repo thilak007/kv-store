@@ -41,6 +41,8 @@ func (s *raftService) AppendEntries(ctx context.Context, in *pb.AppendRequest) (
 		}, nil
 	}
 
+	s.node.leaderId = in.LeaderId
+
 	// Update term if leader's term is newer
 	if in.Term > s.node.currentTerm {
 		log.Printf("[Node %s] Term update: %d → %d (from leader %s), stepping down to Follower",
