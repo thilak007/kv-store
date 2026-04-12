@@ -480,6 +480,7 @@ func main() {
 		responseCh: responseCh,
 	}
 	nodeID := fmt.Sprintf("%d.%d", replicaId, partitionId)
+	// Todo: pass the peer IDs and peer connections...
 	raftNode := raft.NewRaftNode(nodeID, []string{}, stateMachine, db, "raft_log")
 	log.Printf("Initialized raft node: %s", raftNode.String())
 
