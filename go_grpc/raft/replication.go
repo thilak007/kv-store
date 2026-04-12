@@ -199,7 +199,7 @@ func (rf *RaftNode) tryCommit() {
 		if count > len(rf.peers)/2 {
 			oldCommit := rf.commitIndex
 			rf.commitIndex = nextCommit
-			log.Printf("[Node %s] ★ COMMIT: %d → %d (count=%d/%d)",
+			log.Printf("[Node %s] COMMIT: %d → %d (count=%d/%d)",
 				rf.nodeId, oldCommit, rf.commitIndex, count, len(rf.peers)+1)
 			rf.signalApply()
 		} else {

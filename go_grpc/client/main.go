@@ -18,110 +18,162 @@ import (
 
 // global partition configuration (set in main)
 var numPartitions int32
-var partitionMap map[int32]string
+var partitionMap map[int32][]string            // partition -> list of replica addresses
+var targetIndex map[int32]int                  // partition -> index in partitionMap[] currently connected to
+var targetClients map[int32]pb.KVServiceClient // partition -> cached client to current target
+var targetConns map[int32]*grpc.ClientConn     // partition -> cached conn to current target
 var keyspace string
 
-func handlePut(client pb.KVServiceClient, key, value string) {
-	attempt := 0
-	maxDelay := 30 * time.Second
+// parseNodeId extracts replica index and partition ID from "replicaIdx.partitionId".
+func parseNodeId(id string) (int, int) {
+	parts := strings.Split(id, ".")
+	if len(parts) != 2 {
+		return -1, -1
+	}
+	var serverIdx, pid int
+	fmt.Sscanf(parts[0], "%d", &serverIdx)
+	fmt.Sscanf(parts[1], "%d", &pid)
+	return serverIdx, pid
+}
 
+// parseManagerLeaderIndex extracts the replica index from a manager LeaderId (e.g. "0.0" → 0).
+func parseManagerLeaderIndex(leaderId string) int {
+	parts := strings.Split(leaderId, ".")
+	if len(parts) != 2 {
+		return -1
+	}
+	var idx int
+	fmt.Sscanf(parts[0], "%d", &idx)
+	return idx
+}
+
+func handlePut(partitionId int32, key, value string) {
 	req := &pb.PutRequest{
 		Key:   key,
 		Value: value,
 	}
 
+	client := targetClients[partitionId]
 	for {
-		attempt++
-		retryDelay := time.Duration(2*attempt) * time.Second
-		if retryDelay > maxDelay {
-			retryDelay = maxDelay
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
-
 		res, err := client.Put(ctx, req)
 		cancel()
 
 		if err == nil {
-			status := "not_found"
-			if res.AlreadyExists {
-				status = "found"
+			// Case1: Server doesn't know who the leader is — retry same server after delay
+			if res.LeaderId == "" {
+				log.Printf("PUT %s: server doesn't know leader. Retrying same replica...", key)
+				time.Sleep(500 * time.Millisecond)
+				continue
 			}
-			fmt.Printf("PUT %s %s\n", key, status)
-			return
+
+			// case2: Contacted server is the leader itself
+			leaderIdx, _ := parseNodeId(res.LeaderId)
+			if leaderIdx == targetIndex[partitionId] {
+				status := "not_found"
+				if res.AlreadyExists {
+					status = "found"
+				}
+				fmt.Printf("PUT %s %s\n", key, status)
+				return
+			}
+
+			// Case3: Redirect to leader
+			log.Printf("PUT %s: redirecting to leader %s", key, res.LeaderId)
+			client = connectToTarget(partitionId, int(leaderIdx))
+			continue
 		}
-		// Failed - retry indefinitely
-		log.Printf("PUT failed (attempt %d): %v. Retrying in %v...", attempt, err, retryDelay)
-		time.Sleep(retryDelay)
+		// Failed — try next replica
+		log.Printf("PUT failed: %v. Trying next replica...", err)
+		newIdx := (targetIndex[partitionId] + 1) % len(partitionMap[partitionId])
+		client = connectToTarget(partitionId, newIdx)
 	}
 }
 
-func handleGet(client pb.KVServiceClient, key string) {
-	attempt := 0
-	maxDelay := 30 * time.Second
-
+func handleGet(partitionId int32, key string) {
 	req := &pb.GetRequest{Key: key}
 
+	client := targetClients[partitionId]
 	for {
-		attempt++
-		retryDelay := time.Duration(2*attempt) * time.Second
-		if retryDelay > maxDelay {
-			retryDelay = maxDelay
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
-
 		res, err := client.Get(ctx, req)
 		cancel()
+
 		if err == nil {
-			value := "null"
-			if res.Exists {
-				value = res.Value
+			// Case1: Server doesn't know who the leader is — retry same server after delay
+			if res.LeaderId == "" {
+				log.Printf("GET %s: server doesn't know leader. Retrying same replica...", key)
+				time.Sleep(500 * time.Millisecond)
+				continue
 			}
-			fmt.Printf("GET %s %s\n", key, value)
-			return
+
+			// case2: Contacted server is the leader itself
+			leaderIdx, _ := parseNodeId(res.LeaderId)
+			if leaderIdx == targetIndex[partitionId] {
+				value := "null"
+				if res.Exists {
+					value = res.Value
+				}
+				fmt.Printf("GET %s %s\n", key, value)
+				return
+			}
+
+			// Case3: Redirect to leader
+			log.Printf("GET %s: redirecting to leader %s", key, res.LeaderId)
+			client = connectToTarget(partitionId, int(leaderIdx))
+			continue
 		}
-		// Failed - retry indefinitely
-		log.Printf("GET failed (attempt %d): %v. Retrying in %v...", attempt, err, retryDelay)
-		time.Sleep(retryDelay)
+		// Failed — try next replica
+		log.Printf("GET failed: %v. Trying next replica...", err)
+		newIdx := (targetIndex[partitionId] + 1) % len(partitionMap[partitionId])
+		client = connectToTarget(partitionId, newIdx)
 	}
 }
 
-func handleSwap(client pb.KVServiceClient, key, value string) {
-	attempt := 0
-	maxDelay := 30 * time.Second
-
+func handleSwap(partitionId int32, key, value string) {
 	req := &pb.SwapRequest{
 		Key:   key,
 		Value: value,
 	}
 
+	client := targetClients[partitionId]
 	for {
-		attempt++
-		retryDelay := time.Duration(2*attempt) * time.Second
-		if retryDelay > maxDelay {
-			retryDelay = maxDelay
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
-
 		res, err := client.Swap(ctx, req)
 		cancel()
 
 		if err == nil {
-			oldValue := "null"
-			if res.Exists {
-				oldValue = res.OldValue
+			// Case1: Server doesn't know who the leader is — retry same server after delay
+			if res.LeaderId == "" {
+				log.Printf("SWAP %s: server doesn't know leader. Retrying same replica...", key)
+				time.Sleep(500 * time.Millisecond)
+				continue
 			}
-			fmt.Printf("SWAP %s %s\n", key, oldValue)
-			return
+
+			// case2: Contacted server is the leader itself
+			leaderIdx, _ := parseNodeId(res.LeaderId)
+			if leaderIdx == targetIndex[partitionId] {
+				oldValue := "null"
+				if res.Exists {
+					oldValue = res.OldValue
+				}
+				fmt.Printf("SWAP %s %s\n", key, oldValue)
+				return
+			}
+
+			// Case3: Redirect to leader
+			log.Printf("SWAP %s: redirecting to leader %s", key, res.LeaderId)
+			client = connectToTarget(partitionId, int(leaderIdx))
+			continue
 		}
-		// Failed - retry indefinitely
-		log.Printf("SWAP failed (attempt %d): %v. Retrying in %v...", attempt, err, retryDelay)
-		time.Sleep(retryDelay)
+		// Failed — try next replica
+		log.Printf("SWAP failed: %v. Trying next replica...", err)
+		newIdx := (targetIndex[partitionId] + 1) % len(partitionMap[partitionId])
+		client = connectToTarget(partitionId, newIdx)
 	}
 }
 
-func handleSingeServerScan(serverAddr string, client pb.KVServiceClient, startKey, endKey string) (map[string]string, error) {
-	attempt := 1
-	retryDelay := time.Duration(2*attempt) * time.Second
+func handleSingleServerScan(partitionId int32, startKey, endKey string) (map[string]string, error) {
 	var kvPairs map[string]string
 
 	req := &pb.ScanRequest{
@@ -129,23 +181,21 @@ func handleSingeServerScan(serverAddr string, client pb.KVServiceClient, startKe
 		EndKey:   endKey,
 	}
 
-	isSuccess := false
+	client := targetClients[partitionId]
 
-	// TODO: Should we have a outer timeout of 15minutes and return gracefully instead of indefinite retires?
-	for !isSuccess {
-		attempt++
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute) // 5 Minute timeout for each request.
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		res, err := client.Scan(ctx, req)
-		defer cancel()
 
 		if err != nil {
 			cancel()
-			// Failed - retry
-			log.Printf("SCAN error from %s (attempt %d): %v.  Retrying in %v..", serverAddr, attempt, err, retryDelay)
-			time.Sleep(retryDelay)
+			// Failed — try next replica
+			log.Printf("SCAN error from partition %d: %v. Trying next replica...", partitionId, err)
+			newIdx := (targetIndex[partitionId] + 1) % len(partitionMap[partitionId])
+			client = connectToTarget(partitionId, newIdx)
 			continue
 		}
+
 		kvPairs = map[string]string{}
 
 		// Receive all results from this server
@@ -155,63 +205,80 @@ func handleSingeServerScan(serverAddr string, client pb.KVServiceClient, startKe
 				break
 			}
 			if err != nil {
-				cancel()
-				log.Printf("SCAN streaming error (recv) from %s (attempt %d): %v. Retrying in %v..", serverAddr, attempt, err, retryDelay)
-				time.Sleep(retryDelay)
+				// Failed — try next replica
+				log.Printf("SCAN streaming error (recv) from partition %d: %v. Trying next replica...", partitionId, err)
+				newIdx := (targetIndex[partitionId] + 1) % len(partitionMap[partitionId])
+				client = connectToTarget(partitionId, newIdx)
+				kvPairs = nil
+				break
+			}
+			// Case1: Server doesn't know who the leader is — retry same server after delay
+			if kv.LeaderId == "" {
+				log.Printf("SCAN %s: partition %d server doesn't know leader. Retrying same replica...", startKey, partitionId)
+				time.Sleep(500 * time.Millisecond)
+				kvPairs = nil
+				break
+			}
+
+			// case2: Contacted server is a follower
+			leaderIdx, _ := parseNodeId(kv.LeaderId)
+			if leaderIdx != targetIndex[partitionId] {
+				log.Printf("SCAN %s: partition %d server is follower, redirecting to %s", startKey, partitionId, kv.LeaderId)
+				client = connectToTarget(partitionId, int(leaderIdx))
+				kvPairs = nil
 				break
 			}
 			kvPairs[kv.Key] = kv.Value
 		}
-		isSuccess = true
-		return kvPairs, err
-	}
+		cancel()
 
-	return nil, fmt.Errorf("scan failed after all retries")
+		if kvPairs != nil {
+			return kvPairs, nil
+		}
+		// kvPairs is nil → redirect, unknown leader, or streaming error happened, retry loop continues
+	}
 }
 
-func isAllServerScansComplete(mp map[string]bool) bool {
-	for _, v := range mp {
-		if !v {
+func allServerScansComplete(succeeded map[int32]bool, startPid, endPid int32) bool {
+	for pid := startPid; pid <= endPid; pid++ {
+		if !succeeded[pid] {
 			return false
 		}
 	}
 	return true
 }
 
-func handleScan(serverClients map[string]pb.KVServiceClient, startKey, endKey string) {
+func handleScan(startKey, endKey string) {
 
 	// determine which partitions actually need scanning
 	startPid := hashKey(startKey, keyspace) // Start server ID
 	endPid := hashKey(endKey, keyspace)     // End server ID
-	// log.Printf("Starting Scan from server ID: %d to server ID: %d, start key: %s, end key: %s, keyspace: %s", startPid, endPid, startKey, endKey, keyspace)
 
 	allResp := make(map[string]string)
-	allSucceeded := make(map[string]bool)
+	allSucceeded := make(map[int32]bool)
 
-	// build a reduced client set containing only the relevant servers
-	relevantClients := make(map[string]pb.KVServiceClient)
+	// build a reduced client set containing only the relevant partitions
 	for i := startPid; i <= endPid; i++ {
-		if addr, ok := partitionMap[i]; ok {
-			relevantClients[addr] = serverClients[addr]
-			allSucceeded[addr] = false
+		if _, ok := partitionMap[i]; ok {
+			allSucceeded[i] = false
 		}
 	}
 
-	for !isAllServerScansComplete(allSucceeded) {
-		// Query all servers whose scan request hasn't completed successfully.
-		for serverAddr, client := range relevantClients {
+	for !allServerScansComplete(allSucceeded, startPid, endPid) {
+		// Query all partitions whose scan request hasn't completed successfully.
+		for pid := range allSucceeded {
 
-			if allSucceeded[serverAddr] {
+			if allSucceeded[pid] {
 				continue
 			}
 
-			respKVPairs, err := handleSingeServerScan(serverAddr, client, startKey, endKey)
+			respKVPairs, err := handleSingleServerScan(pid, startKey, endKey)
 
 			if err != nil {
-				allSucceeded[serverAddr] = false
-				break
+				allSucceeded[pid] = false
+				continue
 			}
-			allSucceeded[serverAddr] = true
+			allSucceeded[pid] = true
 
 			for key, value := range respKVPairs {
 				allResp[key] = value
@@ -238,70 +305,100 @@ func handleScan(serverClients map[string]pb.KVServiceClient, startKey, endKey st
 	return
 }
 
-func handleDelete(client pb.KVServiceClient, key string) {
-	attempt := 0
-	maxDelay := 30 * time.Second
-
+func handleDelete(partitionId int32, key string) {
 	req := &pb.DeleteRequest{Key: key}
 
+	client := targetClients[partitionId]
 	for {
-		attempt++
-		retryDelay := time.Duration(2*attempt) * time.Second
-		if retryDelay > maxDelay {
-			retryDelay = maxDelay
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
-
 		res, err := client.Delete(ctx, req)
 		cancel()
 
 		if err == nil {
-			value := "not_found"
-			if res.Exists {
-				value = "found"
+			// Case1: Server doesn't know who the leader is — retry same server after delay
+			if res.LeaderId == "" {
+				log.Printf("DELETE %s: server doesn't know leader. Retrying same replica...", key)
+				time.Sleep(500 * time.Millisecond)
+				continue
 			}
-			fmt.Printf("DELETE %s %s\n", key, value)
-			return
+
+			// case2: Contacted server is the leader itself
+			leaderIdx, _ := parseNodeId(res.LeaderId)
+			if leaderIdx == targetIndex[partitionId] {
+				value := "not_found"
+				if res.Exists {
+					value = "found"
+				}
+				fmt.Printf("DELETE %s %s\n", key, value)
+				return
+			}
+
+			// Case3: Redirect to leader
+			log.Printf("DELETE %s: redirecting to leader %s", key, res.LeaderId)
+			client = connectToTarget(partitionId, int(leaderIdx))
+			continue
 		}
-		// Failed - retry indefinitely
-		log.Printf("DELETE failed (attempt %d): %v. Retrying in %v...", attempt, err, retryDelay)
-		time.Sleep(retryDelay)
+		// Failed — try next replica
+		log.Printf("DELETE failed: %v. Trying next replica...", err)
+		newIdx := (targetIndex[partitionId] + 1) % len(partitionMap[partitionId])
+		client = connectToTarget(partitionId, newIdx)
 	}
 }
 
-func getPartitionMap(ManagerAddr string) (int32, map[int32]string) {
+func getPartitionMap(managerAddrs []string) (int32, map[int32][]string) {
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 
-	attempt := 1
-	retryDelay := time.Duration(2*attempt) * time.Second
+	targetIdx := int(0)
+	targetAddr := managerAddrs[0]
 
 	for {
-		attempt++
-		log.Printf("Attempting to connect to Manager at %s (attempt %d)", ManagerAddr, attempt)
+		log.Printf("Attempting to connect to Manager at %s", targetAddr)
 
-		managerConn, err := grpc.NewClient(ManagerAddr, opts...)
+		managerConn, err := grpc.NewClient(targetAddr, opts...)
 		if err != nil {
-			log.Fatalf("Failed to connect: %v. Retrying in %v...", err, retryDelay)
-			time.Sleep(retryDelay)
+			log.Printf("Failed to connect to Manager at %s: %v. Trying next replica...", targetAddr, err)
+			targetIdx = (targetIdx + 1) % len(managerAddrs)
+			targetAddr = managerAddrs[targetIdx]
 			continue
 		}
 
 		managerClient := pb.NewClusterManagerClient(managerConn)
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		res, err := managerClient.GetPartitionMap(ctx, &pb.PartitionMapRequest{})
-
 		cancel()
 		managerConn.Close()
 
 		if err != nil {
-			log.Printf("Get Partition Map Error: %v. Retrying in %v...", err, retryDelay)
-			time.Sleep(retryDelay)
+			log.Printf("Get Partition Map Error from %s: %v. Trying next replica...", targetAddr, err)
+			targetIdx = (targetIdx + 1) % len(managerAddrs)
+			targetAddr = managerAddrs[targetIdx]
 			continue
 		}
 
+		// Manager doesn't know who the leader is — retry same after delay
+		if res.LeaderId == "" {
+			log.Printf("Manager doesn't know leader. Retrying same replica...")
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		leaderIdx, _ := parseNodeId(res.LeaderId)
+		if leaderIdx != targetIdx {
+			log.Printf("Manager %s is follower. Redirecting to leader: %s", targetAddr, res.LeaderId)
+			targetIdx = leaderIdx
+			targetAddr = managerAddrs[targetIdx]
+			continue
+		}
+
+		// We got the partition map from the leader
+		partitionAddrs := make(map[int32][]string)
+		for pid, entry := range res.PartitionMap {
+			partitionAddrs[pid] = entry.GetAddresses()
+		}
+
 		log.Printf("Successfully retrieved partition map: %d partitions", res.NumPartitions)
-		return res.NumPartitions, res.PartitionMap
+		return res.NumPartitions, partitionAddrs
 	}
 }
 
@@ -327,6 +424,25 @@ func connectToServer(serverAddr string) (*grpc.ClientConn, pb.KVServiceClient) {
 		log.Printf("Successfully connected to server %s", serverAddr)
 		return conn, client
 	}
+}
+
+// connectToTarget closes the current connection for a partition and connects to partitionMap[partitionId][newIndex].
+// Updates targetIndex, targetConns, targetClients.
+// Returns the new client for immediate reuse.
+func connectToTarget(partitionId int32, newIndex int) pb.KVServiceClient {
+	// Close existing connection
+	targetConns[partitionId].Close()
+
+	// Connect to new target
+	addr := partitionMap[partitionId][newIndex]
+	conn, client := connectToServer(addr)
+
+	// Update target variable
+	targetIndex[partitionId] = newIndex
+	targetConns[partitionId] = conn
+	targetClients[partitionId] = client
+
+	return client
 }
 
 func randomKeyPartition(key string) int32 {
@@ -377,23 +493,29 @@ func main() {
 	}
 
 	// Get partition map from Manager
-	managerAddr := os.Args[1]
+	managerAddrs := strings.Split(os.Args[1], ",")
 	keyspace = os.Args[2]
 	log.Printf("Keyspace value: %s \n", keyspace)
 
-	numPartitions, partitionMap = getPartitionMap(managerAddr)
+	numPartitions, partitionMap = getPartitionMap(managerAddrs)
 
-	// Connect to all servers
-	serverClients := make(map[string]pb.KVServiceClient)
-	serverConns := make(map[string]*grpc.ClientConn)
+	// Build target maps (default to 0th index = assumed leader) and connect
+	targetClients = make(map[int32]pb.KVServiceClient)
+	targetConns = make(map[int32]*grpc.ClientConn)
+	targetIndex = make(map[int32]int)
 
-	for _, serverAddr := range partitionMap {
-		conn, client := connectToServer(serverAddr)
-		serverClients[serverAddr] = client // Store client object for making RPC calls
-		serverConns[serverAddr] = conn
+	for pid, addrs := range partitionMap {
+		if len(addrs) == 0 {
+			continue
+		}
+		conn, client := connectToServer(addrs[0])
+
+		targetIndex[pid] = 0
+		targetClients[pid] = client
+		targetConns[pid] = conn
 	}
 	defer func() {
-		for _, conn := range serverConns {
+		for _, conn := range targetConns {
 			conn.Close()
 		}
 	}()
@@ -417,22 +539,20 @@ func main() {
 
 		switch cmd {
 		case "SCAN":
-			handleScan(serverClients, args[1], args[2])
+			handleScan(args[1], args[2])
 		default:
 			key := args[1]
 			partitionId := hashKey(key, keyspace)
-			serverAddr := partitionMap[partitionId]
-			client := serverClients[serverAddr]
 
 			switch cmd {
 			case "PUT":
-				handlePut(client, key, args[2])
+				handlePut(partitionId, key, args[2])
 			case "GET":
-				handleGet(client, key)
+				handleGet(partitionId, key)
 			case "SWAP":
-				handleSwap(client, key, args[2])
+				handleSwap(partitionId, key, args[2])
 			case "DELETE":
-				handleDelete(client, key)
+				handleDelete(partitionId, key)
 			}
 		}
 	}

@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,8 +20,14 @@ var (
 	numPartitions int32
 	serverAddrs   []string
 	mu            sync.RWMutex
-	partitionMap  = make(map[int32]string)
+	partitionMap  = make(map[int32][]string)
 	requestID     uint64
+	replicaID     int
+	manListen     string
+	p2pListen     string
+	peerAddrs     string
+	serverRF      int
+	backerPath    string
 )
 
 type manager struct {
@@ -65,34 +71,53 @@ func (m *manager) GetPartitionMap(ctx context.Context, in *pb.PartitionMapReques
 		log.Printf("[ReqID: %d] Returning PartitionMap to client(s)", reqID)
 	}
 
+	// Convert map[int32][]string -> map[int32]*PartitionEntry
+	partitionEntryMap := make(map[int32]*pb.PartitionEntry)
+	for pid, addrs := range partitionMap {
+		partitionEntryMap[pid] = &pb.PartitionEntry{
+			Addresses: addrs,
+		}
+	}
+
 	return &pb.PartitionMapResponse{
 		NumPartitions: numPartitions,
-		PartitionMap:  partitionMap,
+		PartitionMap:  partitionEntryMap,
+		LeaderId:      fmt.Sprintf("0.0"),
 	}, nil
 }
 
 func main() {
-	if len(os.Args) < 3 {
-		log.Fatalf("Usage: %s <listen_address> <server_addrs>", os.Args[0])
+	var serverAddrsStr string
+	flag.IntVar(&replicaID, "replica_id", 0, "Manager replica ID")
+	flag.StringVar(&manListen, "man_listen", "", "Manager management API listen address")
+	flag.StringVar(&p2pListen, "p2p_listen", "", "Manager P2P listen address (future)")
+	flag.StringVar(&peerAddrs, "peer_addrs", "", "Comma-separated peer manager addresses (future)")
+	flag.IntVar(&serverRF, "server_rf", 3, "Server replication factor")
+	flag.StringVar(&serverAddrsStr, "server_addrs", "", "Comma-separated server addresses")
+	flag.StringVar(&backerPath, "backer_path", "", "Backer file path (future)")
+	flag.Parse()
+
+	if manListen == "" || serverAddrsStr == "" {
+		flag.Usage()
+		log.Fatalf("Error: --man_listen and --server_addrs are required")
 	}
+
 	fmt.Println("Manager service started. Awaiting server registrations...")
 
-	// Args
-	listenAddr := os.Args[1]
-	serverAddrStr := os.Args[2]
-	serverAddrs = strings.Split(serverAddrStr, ",")
-	for i, addr := range serverAddrs {
-		partitionMap[int32(i)] = addr
-	}
-	numPartitions = int32(len(serverAddrs))
+	serverAddrs = strings.Split(serverAddrsStr, ",")
+	numPartitions = int32(len(serverAddrs)) / int32(serverRF)
 
-	log.Printf("Configured %d partitions:", numPartitions)
+	for i := int32(0); i < numPartitions; i++ {
+		partitionMap[i] = serverAddrs[i*int32(serverRF) : (i+1)*int32(serverRF)]
+	}
+
+	log.Printf("Configured %d partitions (RF=%d):", numPartitions, serverRF)
 	for id, addr := range partitionMap {
 		log.Printf("  Partition %d → %s", id, addr)
 	}
 
 	// Start gRPC server for ClusterManager
-	lis, err := net.Listen("tcp", listenAddr)
+	lis, err := net.Listen("tcp", manListen)
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
 	}
