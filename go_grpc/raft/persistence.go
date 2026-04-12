@@ -60,18 +60,8 @@ func (rf *RaftNode) persistState() error {
 			b.Put([]byte("snapshotBuf"), rf.snapshotBuf)
 		}
 
-		// ── Persistent State: log ──────────────────────────────────
-		// Clear old log entries
-		for i := uint64(0); i <= rf.log.LastIndex()+100; i++ {
-			key := []byte(fmt.Sprintf("log.%d", i))
-			if b.Get(key) == nil {
-				break
-			}
-			b.Delete(key)
-		}
-
 		// Write all log entries
-		for j := uint64(0); j <= rf.log.LastIndex(); j++ {
+		for j := uint64(1); j <= rf.log.LastIndex(); j++ {
 			entry := rf.log.Get(j)
 			if entry == nil {
 				continue
@@ -120,7 +110,7 @@ func (rf *RaftNode) LoadState() error {
 
 		if v := b.Get([]byte("logLen")); v != nil {
 			logLen := u64(v)
-			for i := uint64(0); i <= logLen; i++ {
+			for i := uint64(1); i <= logLen; i++ {
 				key := []byte(fmt.Sprintf("log.%d", i))
 				v := b.Get(key)
 				if v == nil {
