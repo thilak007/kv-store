@@ -91,7 +91,11 @@ type RaftNode struct {
 }
 
 // NewRaftNode creates and initializes a new Raft node.
-func NewRaftNode(id string, peers []string, kvsm StateMachine, db *bolt.DB, raftBucket string) *RaftNode {
+func NewRaftNode(id string, peers []string, kvsm StateMachine, db *bolt.DB, raftBucket string, peerClients map[string]pb.RaftClient) *RaftNode {
+	if peerClients == nil {
+		peerClients = make(map[string]pb.RaftClient)
+	}
+
 	return &RaftNode{
 		currentTerm: 0,
 		votedFor:    "",
@@ -106,7 +110,7 @@ func NewRaftNode(id string, peers []string, kvsm StateMachine, db *bolt.DB, raft
 		db:          db,
 		raftBucket:  raftBucket,
 		role:        Follower,
-		peerClients: make(map[string]pb.RaftClient),
+		peerClients: peerClients,
 	}
 }
 

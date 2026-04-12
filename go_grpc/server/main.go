@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -410,6 +411,53 @@ func createListener(listenAddr string, serviceName string) net.Listener {
 	return lis
 }
 
+func parseAddressList(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "none" {
+		return nil
+	}
+
+	parts := strings.Split(raw, ",")
+	addrs := make([]string, 0, len(parts))
+	for _, p := range parts {
+		addr := strings.TrimSpace(p)
+		if addr != "" {
+			addrs = append(addrs, addr)
+		}
+	}
+	return addrs
+}
+
+func buildPeerNodeIDs(replicaId int, partitionId int32, peerCount int) []string {
+	totalReplicas := peerCount + 1
+	peerIDs := make([]string, 0, peerCount)
+	for rid := 0; rid < totalReplicas; rid++ {
+		if rid == replicaId {
+			continue
+		}
+		peerIDs = append(peerIDs, fmt.Sprintf("%d.%d", rid, partitionId))
+	}
+	return peerIDs
+}
+
+func buildPeerClients(peerIDs []string, peerAddrs []string) map[string]raftpb.RaftClient {
+	if len(peerIDs) != len(peerAddrs) {
+		log.Fatalf("peer ID count (%d) does not match peer address count (%d)", len(peerIDs), len(peerAddrs))
+	}
+
+	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	peerClients := make(map[string]raftpb.RaftClient, len(peerIDs))
+	for i, peerID := range peerIDs {
+		conn, err := grpc.NewClient(peerAddrs[i], opts...)
+		if err != nil {
+			log.Fatalf("failed to connect to peer %s at %s: %v", peerID, peerAddrs[i], err)
+		}
+		peerClients[peerID] = raftpb.NewRaftClient(conn)
+		log.Printf("Connected peer client %s -> %s", peerID, peerAddrs[i])
+	}
+	return peerClients
+}
+
 /*
 p2 call:
 ./bin/server {{manager}} {{api_ip}}:{{api_port}} {{id}} {{backer_path}}
@@ -431,10 +479,14 @@ func main() {
 	// ManagerAddr := os.Args[3] // Address of the manager: chose the index 0.
 	apiListenAddr := os.Args[4]
 	raftListenAddr := os.Args[5]
+	peerAddrsRaw := os.Args[6]
+	peerAddrs := parseAddressList(peerAddrsRaw)
 
 	storageDir := os.Args[7] // Path to the directory where BoltDB will store its data files
 	dbPath := filepath.Join(storageDir, "kvstore.db")
 	bucketName := "kvstore_bucket"
+	// BoltDB bucket for Raft log and it's state persistence
+	raftStateBucket := "raft_log_bucket"
 
 	// Register with Manager to get partition ID
 	// partitionId := Register(ManagerAddr, int32(serverId)) // Verify that partitionId is same as one being initialized with like 0 as I'm using it to define nodeId.
@@ -483,8 +535,13 @@ func main() {
 		responseCh: responseCh,
 	}
 	nodeID := fmt.Sprintf("%d.%d", replicaId, partitionId)
-	// Todo: pass the peer IDs and peer connections...
-	raftNode := raft.NewRaftNode(nodeID, []string{}, stateMachine, db, "raft_log")
+	peerNodeIDs := buildPeerNodeIDs(int(replicaId), int32(partitionId), len(peerAddrs))
+	peerClients := buildPeerClients(peerNodeIDs, peerAddrs)
+	raftNode := raft.NewRaftNode(nodeID, peerNodeIDs, stateMachine, db, raftStateBucket, peerClients)
+	// Load persisted Raft state (currentTerm, votedFor, log entries) from BoltDB
+	if err := raftNode.LoadState(); err != nil {
+		log.Fatalf("failed to load raft state: %v", err)
+	}
 	log.Printf("Initialized raft node: %s", raftNode.String())
 
 	// Start listening for KV Store RPC requests and Raft RPCs
