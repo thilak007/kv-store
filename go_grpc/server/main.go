@@ -488,6 +488,8 @@ func main() {
 	// BoltDB bucket for Raft log and it's state persistence
 	raftStateBucket := "raft_log_bucket"
 
+	log.Printf("API Listen addr is %s, Peer Listern Addr is %s", apiListenAddr, raftListenAddr)
+
 	// Register with Manager to get partition ID
 	// partitionId := Register(ManagerAddr, int32(serverId)) // Verify that partitionId is same as one being initialized with like 0 as I'm using it to define nodeId.
 
@@ -538,11 +540,13 @@ func main() {
 	peerNodeIDs := buildPeerNodeIDs(int(replicaId), int32(partitionId), len(peerAddrs))
 	peerClients := buildPeerClients(peerNodeIDs, peerAddrs)
 	raftNode := raft.NewRaftNode(nodeID, peerNodeIDs, stateMachine, db, raftStateBucket, peerClients)
+
+	log.Printf("Initialized raft node: %s", raftNode.String())
 	// Load persisted Raft state (currentTerm, votedFor, log entries) from BoltDB
 	if err := raftNode.LoadState(); err != nil {
 		log.Fatalf("failed to load raft state: %v", err)
 	}
-	log.Printf("Initialized raft node: %s", raftNode.String())
+	log.Printf("after loading persisted state, raft node: %s", raftNode.String())
 
 	// Start listening for KV Store RPC requests and Raft RPCs
 	lis := createListener(apiListenAddr, "Kvstore APIs")

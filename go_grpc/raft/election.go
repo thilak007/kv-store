@@ -12,7 +12,7 @@ import (
 
 func (rf *RaftNode) becomeCandidate() {
 	rf.raftmu.Lock()
-	defer rf.raftmu.Unlock()
+	// defer rf.raftmu.Unlock()
 
 	// 1. Increment currentTerm
 	rf.currentTerm++
@@ -148,10 +148,16 @@ func (rf *RaftNode) sendRequestVote(peer string, lastLogIndex, lastLogTerm uint6
 // when no heartbeat is received within the election timeout.
 func (rf *RaftNode) electionTimerLoop() {
 	for {
-		rf.raftmu.Lock()
+
 		// Random election timeout: 150-300ms
 		timeout := time.Duration(150+rand.Intn(151)) * time.Millisecond
+		rf.raftmu.Lock()
+		currentRole := rf.role
 		rf.raftmu.Unlock()
+		if currentRole == Leader {
+			// Leaders don't run election timers
+			break
+		}
 
 		timer := time.NewTimer(timeout)
 

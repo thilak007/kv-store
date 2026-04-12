@@ -73,7 +73,8 @@ service node="s0.0" \
         --server-just-args p3::server \
             $({{python_run}} justmod/xtract.py partid "{{node}}") \
             $({{python_run}} justmod/xtract.py repid "{{node}}") \
-            "{{managers}}" {{ip}}\
+            "{{managers}}" \
+            "{{ip}}" \
             $({{python_run}} justmod/xtract.py portof "{{servers}}" "{{node}}" "{{server_rf}}") \
             $({{python_run}} justmod/xtract.py portof "{{server_p2ps}}" "{{node}}" "{{server_rf}}") \
             $({{python_run}} justmod/xtract.py peersof "{{server_p2ps}}" "{{node}}" "{{server_rf}}") \

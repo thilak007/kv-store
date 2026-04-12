@@ -47,6 +47,9 @@ func (s *raftService) AppendEntries(ctx context.Context, in *pb.AppendRequest) (
 	}
 
 	s.node.leaderId = in.LeaderId
+	// Valid leader heartbeat received — reset election timeout
+	log.Printf("Resetting Election Timer, RECEIVED HEARTBEAT")
+	s.node.resetElectionTimer()
 
 	// Update term if leader's term is newer
 	if in.Term > s.node.currentTerm {
@@ -121,9 +124,6 @@ func (s *raftService) AppendEntries(ctx context.Context, in *pb.AppendRequest) (
 		// Signal the apply loop to apply newly committed entries asynchronously
 		s.node.signalApply()
 	}
-
-	// 6. Valid leader heartbeat received — reset election timeout
-	s.node.resetElectionTimer()
 
 	return &pb.AppendResponse{
 		Term:          s.node.currentTerm,
