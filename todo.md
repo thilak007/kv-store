@@ -1,17 +1,7 @@
 # Todo p3
 
 ## Server side 
-4. Redirect if write/read request comes to follower:
-
-(Store leader ID: )
-/*
-	Todo:
-	- If follower, then return with leader ID
-	- If leader, propose for log replication - call raft library function.
-	- Call apply from raft
-*/
-5. Update - https://github.com/thilak007/kv-store/pull/7/changes#r3068432476 
-
+1. Fix arguments
 
 ## Client Side:
 1. Update args based on just file expectation
