@@ -1,7 +1,6 @@
 # Todo p3
 
 ## Server side 
-1. Fix arguments
 
 ## Client Side:
 1. Update args based on just file expectation
