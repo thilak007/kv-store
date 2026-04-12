@@ -95,6 +95,7 @@ func (s *raftService) AppendEntries(ctx context.Context, in *pb.AppendRequest) (
 				appended++
 			}
 		}
+
 		// Persist new log entries
 		s.node.persistState()
 	}

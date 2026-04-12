@@ -29,7 +29,7 @@ func (rf *RaftNode) becomeCandidate() {
 
 	lastLogIndex := rf.log.LastIndex()
 	lastLogTerm := rf.log.LastTerm()
-	log.Printf("[Node %s] ★ ELECTION STARTED: Became candidate (term %d, lastLogIndex=%d, lastLogTerm=%d)",
+	log.Printf("[Node %s] ELECTION STARTED: Became candidate (term %d, lastLogIndex=%d, lastLogTerm=%d)",
 		rf.nodeId, rf.currentTerm, lastLogIndex, lastLogTerm)
 
 	// 4. Send RequestVote RPCs to all peers (release lock during RPC)
@@ -65,7 +65,7 @@ func (rf *RaftNode) becomeLeader() {
 	rf.role = Leader
 	rf.votes = 0
 
-	log.Printf("[Node %s] ★ LEADER ELECTED (term %d)", rf.nodeId, rf.currentTerm)
+	log.Printf("[Node %s] LEADER ELECTED (term %d)", rf.nodeId, rf.currentTerm)
 
 	// Initialize leader volatile state
 	for _, peer := range rf.peers {
@@ -167,7 +167,7 @@ func (rf *RaftNode) electionTimerLoop() {
 			timer.Stop()
 		case <-timer.C:
 			// Election timeout expired — start new election
-			log.Printf("[Node %s] ⏰ ELECTION TIMEOUT (no heartbeat in %v)", rf.nodeId, timeout)
+			log.Printf("[Node %s] ELECTION TIMEOUT (no heartbeat in %v)", rf.nodeId, timeout)
 			rf.becomeCandidate()
 		}
 	}
