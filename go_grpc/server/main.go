@@ -400,29 +400,35 @@ func Register(ManagerAddr string, serverId int32) int32 {
 	}
 }
 
+/*
+p2 call:
+./bin/server {{manager}} {{api_ip}}:{{api_port}} {{id}} {{backer_path}}
+
+p3 call:
+./yourserver --partition_id 0 --replica_id 0 --manager_addrs 1.2.3.4:3666,8.7.6.5:3667,12.11.10.9:3668 --api_listen 0.0.0.0:3777 --p2p_listen 0.0.0.0:3707 --peer_addrs 5.6.7.8:3708,9.10.11.12:3709 --backer_path ./backer.s0.0
+*/
+
 func main() {
-	if len(os.Args) < 5 {
-		log.Fatalf("Usage: %s <manager_address> <listen_address> <server_id> <storage_dir>", os.Args[0])
+	if len(os.Args) < 8 {
+		log.Fatalf("Usage: %s <partition_id> <replica_id> <manager_addrs> <api_listen_addrs> <p2p_listen_addrs> <peer_addrs> <storage_dir>", os.Args[0])
 	}
 
-	fmt.Println("Inside main ----->")
+	fmt.Println("Booting up the server for the KV store...")
+
+	partitionId, _ := strconv.ParseInt(os.Args[1], 10, 32)
+	replicaId, _ := strconv.ParseInt(os.Args[2], 10, 32)
 
 	// Args
-	ManagerAddr := os.Args[1]
-	listenAddr := os.Args[2]
+	// ManagerAddr := os.Args[3] // Address of the manager: chose the index 0.
+	listenAddr := os.Args[4]
 	log.Printf("listening address: %s\n", listenAddr)
-	serverIdStr := os.Args[3]
-	storageDir := os.Args[4] // Path to the directory where BoltDB will store its data files
+
+	storageDir := os.Args[7] // Path to the directory where BoltDB will store its data files
 	dbPath := filepath.Join(storageDir, "kvstore.db")
 	bucketName := "kvstore_bucket"
-	replicaId := 0 // todo: change it.
 
 	// Register with Manager to get partition ID
-	serverId, err := strconv.ParseInt(serverIdStr, 10, 32)
-	if err != nil {
-		log.Fatalf("Invalid server ID: %v", err)
-	}
-	partitionId := Register(ManagerAddr, int32(serverId)) // Verify that partitionId is same as one being initialized with like 0 as I'm using it to define nodeId.
+	// partitionId := Register(ManagerAddr, int32(serverId)) // Verify that partitionId is same as one being initialized with like 0 as I'm using it to define nodeId.
 
 	// Ensure the storage directory exists
 	if err := os.MkdirAll(storageDir, 0755); err != nil {
@@ -481,7 +487,7 @@ func main() {
 	pb.RegisterKVServiceServer(s, &server{
 		db:            db,
 		bucketName:    bucketName,
-		myPartitionId: partitionId,
+		myPartitionId: int32(partitionId),
 		replicaId:     int32(replicaId),
 		serverNodeId:  nodeID,
 		raftNode:      raftNode,
