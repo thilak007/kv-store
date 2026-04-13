@@ -101,7 +101,7 @@ fuzz server_rf="5" crashing="no" \
     cargo run -p runner -r --bin fuzzer -- \
         --num-clis 5 \
         --conflict \
-        --client-just-args p3::client "{{managers}}" \
+        --client-just-args p3::client "{{managers}}"  "fuzz" \
         | tee "{{tmpdir_prefix}}/fuzz/fuzz-{{server_rf}}-{{crashing}}.log"
     just p3::kill
 
@@ -114,7 +114,7 @@ bench nclis wload server_rf="3" \
     cargo run -p runner -r --bin bencher -- \
         --num-clis "{{nclis}}" \
         --workload "{{wload}}" \
-        --client-just-args p3::client "{{managers}}" \
+        --client-just-args p3::client "{{managers}}"  "ycsb"\
         | tee "{{tmpdir_prefix}}/bench/bench-{{nclis}}-{{wload}}-{{server_rf}}.log"
     # just p3::kill
 
