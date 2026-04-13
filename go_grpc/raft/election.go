@@ -150,8 +150,8 @@ func (rf *RaftNode) sendRequestVote(peer string, lastLogIndex, lastLogTerm uint6
 func (rf *RaftNode) electionTimerLoop() {
 	for {
 
-		// Random election timeout: 150-300ms
-		timeout := time.Duration(150+rand.Intn(151)) * time.Millisecond
+		// Random election timeout: 500-750ms
+		timeout := time.Duration(500+rand.Intn(251)) * time.Millisecond
 		rf.raftmu.Lock()
 		currentRole := rf.role
 		rf.raftmu.Unlock()
