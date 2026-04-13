@@ -28,7 +28,7 @@ func (rf *RaftNode) applyCommittedEntries() {
 	for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
 		entry := rf.log.Get(i)
 		if entry != nil && !entry.IsNoOp() {
-			if err := rf.sm.Apply(entry.Command); err != nil {
+			if err := rf.sm.Apply(entry.Command, rf.role == Leader); err != nil {
 				log.Printf("[Node %s] ✗ Failed to apply entry %d: %v", rf.nodeId, i, err)
 				return
 			}

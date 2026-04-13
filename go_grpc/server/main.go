@@ -54,7 +54,7 @@ type kvStateMachine struct {
 }
 
 // This function is called from Apply goroutine thread
-func (sm *kvStateMachine) Apply(rawCmd []byte) error {
+func (sm *kvStateMachine) Apply(rawCmd []byte, isLeader bool) error {
 	cmd, err := raft.DeserializeCommand(rawCmd)
 	if err != nil {
 		return err
@@ -65,29 +65,37 @@ func (sm *kvStateMachine) Apply(rawCmd []byte) error {
 		exists, oldValue, err := insertOrUpdateRecord(cmd.Key, cmd.Value, sm.db, sm.bucketName)
 		log.Printf("[Inside Apply]: Completed SWAP for key: %s, oldValue: %s, newValue: %s, error: %v", cmd.Key, oldValue, cmd.Value, err)
 
-		// Send response back to the waiting Swap handler
-		sm.responseCh <- ResponseMessage{
-			Exists:   exists,
-			OldValue: oldValue,
-			Err:      err,
+		if isLeader {
+			// Send response back to the waiting Swap handler
+			sm.responseCh <- ResponseMessage{
+				Exists:   exists,
+				OldValue: oldValue,
+				Err:      err,
+			}
 		}
 		return err
 	case "PUT":
 		exists, oldValue, err := insertOrUpdateRecord(cmd.Key, cmd.Value, sm.db, sm.bucketName)
 		log.Printf("[Inside Apply]: Completed PUT for key: %s, exists: %t, error: %v", cmd.Key, exists, err)
-		// Send response back to the waiting Put handler
-		sm.responseCh <- ResponseMessage{
-			Exists:   exists,
-			OldValue: oldValue,
-			Err:      err,
+
+		if isLeader {
+			// Send response back to the waiting Put handler
+			sm.responseCh <- ResponseMessage{
+				Exists:   exists,
+				OldValue: oldValue,
+				Err:      err,
+			}
 		}
 		return err
 	case "DELETE":
 		exists, err := deleteRecord(cmd.Key, sm.db, sm.bucketName)
 		log.Printf("[Inside Apply]: Completed DELETE for key: %s, exists: %t, error: %v", cmd.Key, exists, err)
-		sm.responseCh <- ResponseMessage{
-			Exists: exists,
-			Err:    err,
+
+		if isLeader {
+			sm.responseCh <- ResponseMessage{
+				Exists: exists,
+				Err:    err,
+			}
 		}
 		return err
 	}

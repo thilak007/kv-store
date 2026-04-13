@@ -32,7 +32,7 @@ func (r NodeRole) String() string {
 }
 
 type StateMachine interface {
-	Apply(cmd []byte) error
+	Apply(cmd []byte, isLeader bool) error
 }
 
 // RaftNode holds all state for a single Raft replica.

@@ -177,7 +177,7 @@ func (s *raftService) InstallSnapshot(ctx context.Context, in *pb.InstallSnapsho
 
 		// Apply snapshot to state machine
 		if len(in.Data) > 0 {
-			if err := s.node.sm.Apply(in.Data); err != nil {
+			if err := s.node.sm.Apply(in.Data, s.node.role == Leader); err != nil {
 				return nil, fmt.Errorf("failed to apply snapshot: %w", err)
 			}
 		}
