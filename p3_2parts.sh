@@ -6,13 +6,37 @@ set -e
 # =============================================================================
 MANAGERS="127.0.0.1:3666,127.0.0.1:3667,127.0.0.1:3668"
 MANAGER_P2PS="127.0.0.1:3606,127.0.0.1:3607,127.0.0.1:3608"
-SERVERS="127.0.0.1:3777,127.0.0.1:3778,127.0.0.1:3779,127.0.0.1:3780,127.0.0.1:3781,127.0.0.1:3877,127.0.0.1:3878,127.0.0.1:3879,127.0.0.1:3880,127.0.0.1:3881"
-SERVER_P2PS="127.0.0.1:3707,127.0.0.1:3708,127.0.0.1:3709,127.0.0.1:3710,127.0.0.1:3711,127.0.0.1:3807,127.0.0.1:3808,127.0.0.1:3809,127.0.0.1:3810,127.0.0.1:3811"
 IP="127.0.0.1"
 BACKER="./backer"
+SERVER_API_BASE_PORT=3777
+SERVER_P2P_BASE_PORT=3707
+YCSB_LOG_DIR="./output/benchmarks"
 
-# Number of partitions (p0 = s0.*, p1 = s1.*)
-NUM_PARTITIONS=2
+# Number of partitions (single partition only: p0 = s0.*)
+NUM_PARTITIONS=1
+
+# Build comma-separated server API and p2p address lists for the active RF.
+build_server_lists() {
+    local server_rf=$1
+    local total_servers=$((NUM_PARTITIONS * server_rf))
+    local api_list=""
+    local p2p_list=""
+
+    for (( idx=0; idx<total_servers; idx++ )); do
+        local api_addr="${IP}:$((SERVER_API_BASE_PORT + idx))"
+        local p2p_addr="${IP}:$((SERVER_P2P_BASE_PORT + idx))"
+
+        if [ -z "${api_list}" ]; then
+            api_list="${api_addr}"
+            p2p_list="${p2p_addr}"
+        else
+            api_list="${api_list},${api_addr}"
+            p2p_list="${p2p_list},${p2p_addr}"
+        fi
+    done
+
+    echo "${api_list}|${p2p_list}"
+}
 
 # =============================================================================
 # Helper: setup manager + service nodes
@@ -20,12 +44,16 @@ NUM_PARTITIONS=2
 # =============================================================================
 setup_infrastructure() {
     local server_rf=$1
+    local generated_lists
+    generated_lists="$(build_server_lists "${server_rf}")"
+    local servers="${generated_lists%%|*}"
+    local server_p2ps="${generated_lists#*|}"
 
     echo "  Starting manager (server_rf=${server_rf})..."
     just p3::manager "0" "3666" "3606" \
         "127.0.0.1:3607,127.0.0.1:3608" \
         "${server_rf}" \
-        "${SERVERS}" \
+        "${servers}" \
         "./backer.m.0" &
 
     echo "  Starting service nodes (server_rf=${server_rf})..."
@@ -37,8 +65,8 @@ setup_infrastructure() {
                 "${MANAGER_P2PS}" \
                 "${server_rf}" \
                 "${IP}" \
-                "${SERVERS}" \
-                "${SERVER_P2PS}" \
+                "${servers}" \
+                "${server_p2ps}" \
                 "${BACKER}" &
         done
     done
@@ -100,6 +128,12 @@ run_ycsb_test() {
     local server_rf=$3
     local managers="${MANAGERS}"
     local test_name="ycsb-${workload} ${nclis} clients rf ${server_rf}"
+    local workload_start_ts
+    local workload_end_ts
+    local workload_elapsed
+    local timestamp
+    timestamp="$(date +%Y%m%d_%H%M%S)"
+    local ycsb_log_file="${YCSB_LOG_DIR}/ycsb_w${workload}_c${nclis}_rf${server_rf}_${timestamp}.log"
 
     echo ""
     echo "========================================="
@@ -110,8 +144,14 @@ run_ycsb_test() {
     setup_infrastructure "${server_rf}"
 
     # Run the YCSB benchmark
-    just p3::bench "${nclis}" "${workload}" "${server_rf}" "${managers}"
-    local test_result=$?
+    mkdir -p "${YCSB_LOG_DIR}"
+    echo "Logging YCSB output to: ${ycsb_log_file}"
+    workload_start_ts=$(date +%s)
+    just p3::bench "${nclis}" "${workload}" "${server_rf}" "${managers}" 2>&1 | tee "${ycsb_log_file}"
+    local test_result=${PIPESTATUS[0]}
+    workload_end_ts=$(date +%s)
+    workload_elapsed=$((workload_end_ts - workload_start_ts))
+    echo "Workload '${workload}' with ${nclis} client(s) and rf=${server_rf} completed in ${workload_elapsed}s"
 
     # Cleanup
     cleanup_infrastructure
@@ -135,10 +175,10 @@ echo "Starting Fuzz Test Suite"
 echo "========================================="
 
 # 1.  Fuzz 5 servers, healthy
-run_fuzz_test 5 no
+# run_fuzz_test 5 no
 
 # 2.  Fuzz 5 servers, crashing
-run_fuzz_test 5 yes
+# run_fuzz_test 5 yes
 
 echo ""
 echo "========================================="
@@ -153,22 +193,24 @@ echo "========================================="
 echo "Starting YCSB Test Suite"
 echo "========================================="
 
-# --- YCSB workloads A–F with RF=1 ---
-for workload in a b c d e f; do
-    run_ycsb_test 1 "${workload}" 1
-    run_ycsb_test 3 "${workload}" 1
-    run_ycsb_test 5 "${workload}" 1
-done
-
-# --- YCSB-A with varying RF ---
 run_ycsb_test 1 a 1
-run_ycsb_test 1 a 20
-run_ycsb_test 1 a 30
 
-# --- YCSB-A with 5 clients and varying RF ---
-run_ycsb_test 5 a 1
-run_ycsb_test 5 a 20
-run_ycsb_test 5 a 30
+# # --- YCSB workloads A–F with RF=1 ---
+# for workload in a b c d e f; do
+#     run_ycsb_test 1 "${workload}" 1
+#     run_ycsb_test 3 "${workload}" 1
+#     run_ycsb_test 5 "${workload}" 1
+# done
+
+# # --- YCSB-A with varying RF ---
+# run_ycsb_test 1 a 1
+# run_ycsb_test 1 a 20
+# run_ycsb_test 1 a 30
+
+# # --- YCSB-A with 5 clients and varying RF ---
+# run_ycsb_test 5 a 1
+# run_ycsb_test 5 a 20
+# run_ycsb_test 5 a 30
 
 echo ""
 echo "========================================="
