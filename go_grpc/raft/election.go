@@ -151,7 +151,7 @@ func (rf *RaftNode) electionTimerLoop() {
 	for {
 
 		// Random election timeout: 500-750ms
-		timeout := time.Duration(500+rand.Intn(251)) * time.Millisecond
+		timeout := time.Duration(500+3*rand.Intn(150)) * time.Millisecond
 		rf.raftmu.Lock()
 		currentRole := rf.role
 		rf.raftmu.Unlock()
