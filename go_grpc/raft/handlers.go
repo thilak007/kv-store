@@ -48,7 +48,7 @@ func (s *raftService) AppendEntries(ctx context.Context, in *pb.AppendRequest) (
 
 	s.node.leaderId = in.LeaderId
 	// Valid leader heartbeat received — reset election timeout
-	// log.Printf("Resetting Election Timer, RECEIVED HEARTBEAT")
+	log.Printf("Resetting Election Timer, RECEIVED HEARTBEAT")
 	s.node.resetElectionTimer()
 
 	// Update term if leader's term is newer
@@ -238,6 +238,7 @@ func (s *raftService) RequestVote(ctx context.Context, in *pb.VoteRequest) (*pb.
 		s.node.votedFor = ""
 		s.node.role = Follower
 		s.node.persistState()
+		s.node.resetElectionTimer()
 	}
 
 	// 2. If votedFor is null or candidateId, and candidate's log is at least

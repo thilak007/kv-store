@@ -128,6 +128,7 @@ func (rf *RaftNode) sendRequestVote(peer string, lastLogIndex, lastLogTerm uint6
 		rf.votedFor = ""
 		rf.role = Follower
 		rf.persistState()
+		rf.resetElectionTimer()
 		return
 	}
 
@@ -147,17 +148,27 @@ func (rf *RaftNode) sendRequestVote(peer string, lastLogIndex, lastLogTerm uint6
 
 // electionTimerLoop monitors the node's role and triggers elections
 // when no heartbeat is received within the election timeout.
+// This loop runs for the entire lifetime of the node.
 func (rf *RaftNode) electionTimerLoop() {
 	for {
+		// Check if node should stop
+		select {
+		case <-rf.stopCh:
+			return
+		default:
+		}
 
 		// Random election timeout: 500-750ms
 		timeout := time.Duration(500+3*rand.Intn(150)) * time.Millisecond
+
 		rf.raftmu.Lock()
 		currentRole := rf.role
 		rf.raftmu.Unlock()
+
 		if currentRole == Leader {
-			// Leaders don't run election timers
-			break
+			// Leaders don't run election timers — sleep briefly and recheck
+			time.Sleep(100 * time.Millisecond)
+			continue
 		}
 
 		timer := time.NewTimer(timeout)
@@ -170,13 +181,16 @@ func (rf *RaftNode) electionTimerLoop() {
 			timer.Stop()
 			log.Printf("[Node %s] Election triggered externally", rf.nodeId)
 			rf.becomeCandidate()
+			// After election (won or lost), loop continues — timer will be recreated
 		case <-rf.resetElectionCh:
 			// Valid leader heartbeat received — restart timeout
 			timer.Stop()
+			// Loop continues — fresh timer will be created next iteration
 		case <-timer.C:
 			// Election timeout expired — start new election
 			log.Printf("[Node %s] ELECTION TIMEOUT (no heartbeat in %v)", rf.nodeId, timeout)
 			rf.becomeCandidate()
+			// After election (won or lost), loop continues — timer will be recreated
 		}
 	}
 }

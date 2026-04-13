@@ -228,5 +228,3 @@ Server:
 #   [ycsb-a 5 rf 1 clis]       just p3::bench 1 a 5 <server_addr>
 #   [ycsb-a 5 rf 20 clis]      just p3::bench 20 a 5 <server_addr>
 #   [ycsb-a 5 rf 30 clis]      just p3::bench 30 a 5 <server_addr>
- For each case, launch your service by doing:
-    just p3::service <node_ids> ... (see README for arguments)

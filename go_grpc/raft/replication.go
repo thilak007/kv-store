@@ -161,6 +161,7 @@ func (rf *RaftNode) replicateTo(peer string) {
 		rf.votedFor = ""
 		rf.role = Follower
 		rf.persistState()
+		rf.resetElectionTimer()
 		return
 	}
 
@@ -243,6 +244,7 @@ func (rf *RaftNode) sendInstallSnapshotLocked(peer string) {
 		rf.votedFor = ""
 		rf.role = Follower
 		rf.persistState()
+		rf.resetElectionTimer()
 		return
 	}
 
