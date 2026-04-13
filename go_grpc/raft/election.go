@@ -11,6 +11,7 @@ import (
 )
 
 func (rf *RaftNode) becomeCandidate() {
+	log.Println("Inside becomeCandidate. Let's get this thing")
 	rf.raftmu.Lock()
 	// defer rf.raftmu.Unlock()
 

@@ -471,6 +471,8 @@ p3 call:
 ./yourserver --partition_id 0 --replica_id 0 --manager_addrs 1.2.3.4:3666,8.7.6.5:3667,12.11.10.9:3668 --api_listen 0.0.0.0:3777 --p2p_listen 0.0.0.0:3707 --peer_addrs 5.6.7.8:3708,9.10.11.12:3709 --backer_path ./backer.s0.0
 */
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+
 	if len(os.Args) < 8 {
 		log.Fatalf("Usage: %s <partition_id> <replica_id> <manager_addrs> <api_listen_addrs> <p2p_listen_addrs> <peer_addrs> <storage_dir>", os.Args[0])
 	}

@@ -10,9 +10,13 @@ func (rf *RaftNode) applyLoop() {
 		case <-rf.stopCh:
 			return
 		case <-rf.applyCh:
+			log.Printf("[Node %s] applyLoop triggered: commitIndex=%d, lastApplied=%d",
+				rf.nodeId, rf.commitIndex, rf.lastApplied)
 			rf.raftmu.Lock()
 			rf.applyCommittedEntries()
 			rf.raftmu.Unlock()
+			log.Printf("[Node %s] applyLoop completed: lastApplied=%d",
+				rf.nodeId, rf.lastApplied)
 		}
 	}
 }
