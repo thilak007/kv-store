@@ -25,9 +25,10 @@ setup_infrastructure() {
     echo "  Starting manager (server_rf=${server_rf})..."
     just p3::manager "0" "3666" "3606" \
         "127.0.0.1:3607,127.0.0.1:3608" \
-        "${server_rf}" \
-        "${SERVERS}" \
+        "5" \
+        "130.127.133.174:3777,130.127.133.174:3778,130.127.133.174:3779,130.127.133.174:3780,130.127.133.174:3781" \
         "./backer.m.0" &
+
 
     echo "  Starting service nodes (server_rf=${server_rf})..."
     for (( part=0; part<NUM_PARTITIONS; part++ )); do
@@ -47,4 +48,4 @@ setup_infrastructure() {
     # Wait for services to register
     sleep 3
 }
-setup_infrastructure "${server_rf}"
+setup_infrastructure
