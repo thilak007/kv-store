@@ -193,26 +193,27 @@ echo "========================================="
 echo "Starting YCSB Test Suite"
 echo "========================================="
 
-run_ycsb_test 1 a 1
+run_ycsb_test 30 a 5
 
-# # --- YCSB workloads A–F with RF=1 ---
+# # 1) 10 clients on workloads A-F for RF in {1,3,5}
 # for workload in a b c d e f; do
-#     run_ycsb_test 1 "${workload}" 1
-#     run_ycsb_test 3 "${workload}" 1
-#     run_ycsb_test 5 "${workload}" 1
+#     for rf in 1 3 5; do
+#         run_ycsb_test 10 "${workload}" "${rf}"
+#     done
 # done
 
-# # --- YCSB-A with varying RF ---
-# run_ycsb_test 1 a 1
-# run_ycsb_test 1 a 20
-# run_ycsb_test 1 a 30
-
-# # --- YCSB-A with 5 clients and varying RF ---
-# run_ycsb_test 5 a 1
-# run_ycsb_test 5 a 20
-# run_ycsb_test 5 a 30
+# # 2) Workload A, scale clients from 1 to 30 for RF in {1,5}
+# # Chosen client counts to represent the 1->30 scaling curve.
+# for rf in 1 5; do
+#     for nclis in 1 20 30; do
+#         run_ycsb_test "${nclis}" a "${rf}"
+#     done
+# done
 
 echo ""
 echo "========================================="
 echo "✓ All YCSB tests completed successfully!"
 echo "========================================="
+
+
+# ./p3_2parts.sh 2>&1 | tee "output/benchmarks/p3_2parts_$(date +%Y%m%d_%H%M%S).log"

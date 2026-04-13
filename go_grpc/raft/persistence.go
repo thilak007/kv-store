@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"log"
+	"strconv"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -60,8 +61,54 @@ func (rf *RaftNode) persistState() error {
 			b.Put([]byte("snapshotBuf"), rf.snapshotBuf)
 		}
 
-		// Write all log entries
-		for j := uint64(1); j <= rf.log.LastIndex(); j++ {
+		memLast := rf.log.LastIndex()
+		diskLast := uint64(0)
+		if v := b.Get([]byte("logLen")); v != nil {
+			diskLast = u64(v)
+		}
+
+		// Find first divergent index between in-memory and on-disk logs.
+		firstMismatch := uint64(1)
+		commonLast := memLast
+		if diskLast < commonLast {
+			commonLast = diskLast
+		}
+
+		// Preload on-disk log entries once to avoid repeated point lookups in the compare loop.
+		diskEntries := make(map[uint64][]byte, commonLast)
+		prefix := []byte("log.")
+		c := b.Cursor()
+		for k, v := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, v = c.Next() {
+			idx, parseErr := strconv.ParseUint(string(k[len(prefix):]), 10, 64)
+			if parseErr != nil {
+				continue
+			}
+			if idx >= 1 && idx <= commonLast {
+				diskEntries[idx] = v
+			}
+		}
+
+		for j := uint64(1); j <= commonLast; j++ {
+			entry := rf.log.Get(j)
+			if entry == nil {
+				firstMismatch = j
+				break
+			}
+
+			memData, err := entry.serializeEntry()
+			if err != nil {
+				return fmt.Errorf("failed to serialize log entry %d: %w", j, err)
+			}
+			diskData := diskEntries[j]
+			if !bytes.Equal(memData, diskData) {
+				firstMismatch = j
+				break
+			}
+			firstMismatch = j + 1
+		}
+
+		// Overwrite entries on disk from first mismatch through memory tail.
+		for j := firstMismatch; j <= memLast; j++ {
 			entry := rf.log.Get(j)
 			if entry == nil {
 				continue
@@ -70,11 +117,24 @@ func (rf *RaftNode) persistState() error {
 			if err != nil {
 				return fmt.Errorf("failed to serialize log entry %d: %w", j, err)
 			}
-			b.Put([]byte(fmt.Sprintf("log.%d", j)), data)
+			if err := b.Put([]byte(fmt.Sprintf("log.%d", j)), data); err != nil {
+				return fmt.Errorf("failed to persist log entry %d: %w", j, err)
+			}
 		}
 
-		// Write log length
-		b.Put([]byte("logLen"), b64(rf.log.LastIndex()))
+		// Delete stale trailing entries that no longer exist in memory.
+		if memLast < diskLast {
+			for j := memLast + 1; j <= diskLast; j++ {
+				if err := b.Delete([]byte(fmt.Sprintf("log.%d", j))); err != nil {
+					return fmt.Errorf("failed to delete stale log entry %d: %w", j, err)
+				}
+			}
+		}
+
+		// Write current log length.
+		if err := b.Put([]byte("logLen"), b64(memLast)); err != nil {
+			return fmt.Errorf("failed to persist log length: %w", err)
+		}
 
 		return nil
 	})
