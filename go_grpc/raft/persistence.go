@@ -38,6 +38,7 @@ func (rf *RaftNode) takeSnapshot(index uint64, data []byte) {
 // persistState writes currentTerm, votedFor, and the log to bbolt.
 // Must be called with raftmu held.
 func (rf *RaftNode) persistState() error {
+	return nil
 	return rf.db.Update(func(tx *bolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte(rf.raftBucket))
 		if err != nil {

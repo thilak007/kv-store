@@ -172,9 +172,9 @@ func (rf *RaftNode) electionTimerLoop() {
 		numNodes := 5
 		timeout := time.Duration(base+rand.Intn(spread)+nodeSeed*(jitter/numNodes)) * time.Millisecond
 
-		rf.raftmu.Lock()
+		rf.raftmu.RLock()
 		currentRole := rf.role
-		rf.raftmu.Unlock()
+		rf.raftmu.RUnlock()
 
 		if currentRole == Leader {
 			// Leaders don't run election timers — sleep briefly and recheck

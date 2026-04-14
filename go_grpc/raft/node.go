@@ -49,7 +49,7 @@ type StateMachine interface {
 // Thread safety:
 //   - raftmu protects ALL Raft fields.
 type RaftNode struct {
-	raftmu sync.Mutex
+	raftmu sync.RWMutex
 
 	// ── Persistent State ──────────────────────────────────────────
 	currentTerm uint64 // Latest term this node has seen
@@ -116,8 +116,8 @@ func NewRaftNode(id string, peers []string, kvsm StateMachine, db *bolt.DB, raft
 
 // GetState returns a snapshot of the node's current state for debugging.
 func (rf *RaftNode) GetState() (role NodeRole, leaderId string) {
-	rf.raftmu.Lock()
-	defer rf.raftmu.Unlock()
+	rf.raftmu.RLock()
+	defer rf.raftmu.RUnlock()
 	return rf.role, rf.leaderId
 }
 
@@ -151,8 +151,8 @@ func (rf *RaftNode) Stop() {
 
 // String returns a human-readable representation of the node's state.
 func (rf *RaftNode) String() string {
-	rf.raftmu.Lock()
-	defer rf.raftmu.Unlock()
+	rf.raftmu.RLock()
+	defer rf.raftmu.RUnlock()
 
 	return fmt.Sprintf(
 		"RaftNode{id=%s, role=%s, term=%d, votedFor=%s, commitIndex=%d, lastApplied=%d, log=%s}",

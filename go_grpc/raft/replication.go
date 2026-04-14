@@ -66,12 +66,12 @@ func (rf *RaftNode) replicateAndHeartbeatLoop() {
 // broadcastAppendEntries sends an AppendEntries RPC to all followers.
 // This is the shared heartbeat/replication sender.
 func (rf *RaftNode) broadcastAppendEntries() {
-	rf.raftmu.Lock()
+	rf.raftmu.RLock()
 	if rf.role != Leader {
-		rf.raftmu.Unlock()
+		rf.raftmu.RUnlock()
 		return
 	}
-	rf.raftmu.Unlock()
+	rf.raftmu.RUnlock()
 
 	var wg sync.WaitGroup
 	for _, peer := range rf.peers {
