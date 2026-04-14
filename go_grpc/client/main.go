@@ -55,7 +55,7 @@ func handlePut(partitionId int32, key, value string) {
 
 	client := targetClients[partitionId]
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		res, err := client.Put(ctx, req)
 		cancel()
 
@@ -95,7 +95,7 @@ func handleGet(partitionId int32, key string) {
 
 	client := targetClients[partitionId]
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		res, err := client.Get(ctx, req)
 		cancel()
 
@@ -138,7 +138,7 @@ func handleSwap(partitionId int32, key, value string) {
 
 	client := targetClients[partitionId]
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		res, err := client.Swap(ctx, req)
 		cancel()
 
@@ -310,7 +310,7 @@ func handleDelete(partitionId int32, key string) {
 
 	client := targetClients[partitionId]
 	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		res, err := client.Delete(ctx, req)
 		cancel()
 
