@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math/rand"
 	"sync"
@@ -150,6 +151,10 @@ func (rf *RaftNode) sendRequestVote(peer string, lastLogIndex, lastLogTerm uint6
 // when no heartbeat is received within the election timeout.
 // This loop runs for the entire lifetime of the node.
 func (rf *RaftNode) electionTimerLoop() {
+	// Extract node ID for deterministic jitter offset
+	nodeSeed := 0
+	fmt.Sscanf(rf.nodeId, "%d", &nodeSeed)
+
 	for {
 		// Check if node should stop
 		select {
@@ -158,8 +163,14 @@ func (rf *RaftNode) electionTimerLoop() {
 		default:
 		}
 
-		// Random election timeout: 500-750ms
-		timeout := time.Duration(500+3*rand.Intn(150)) * time.Millisecond
+		// Election timeout: 3000-3400ms + nodeID*300ms stagger
+		// Small random spread (400ms) + large deterministic jitter (1500ms / 5 nodes = 300ms per node)
+		// This guarantees ~100ms minimum gap between any two nodes even in worst case
+		base := 3000
+		spread := 400
+		jitter := 1500
+		numNodes := 5
+		timeout := time.Duration(base+rand.Intn(spread)+nodeSeed*(jitter/numNodes)) * time.Millisecond
 
 		rf.raftmu.Lock()
 		currentRole := rf.role

@@ -42,7 +42,7 @@ func (rf *RaftNode) ProposeCmd(cmd *Command) (uint64, error) {
 // 1. Replicates new log entries to followers when signaled via replicateCh
 // 2. Sends periodic heartbeats to prevent follower election timeouts
 //
-// Heartbeat interval: 250ms (must be < minimum election timeout of 500ms)
+// Heartbeat interval: 250ms (must be < minimum election timeout of 3000ms)
 func (rf *RaftNode) replicateAndHeartbeatLoop() {
 	const heartbeatInterval = 250 * time.Millisecond
 	ticker := time.NewTicker(heartbeatInterval)
