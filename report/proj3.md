@@ -12,7 +12,16 @@ You will run the four described testcase scenarios during demo time.
 
 ### Explanations
 
-*FIXME: add your explanations of each testcase*
+## Server Changes:
+
+1. Initialize RaftNode with node ID, peer IDs, state machine, BoltDB instance, and gRPC clients for peers.
+2. Load persisted Raft state (currentTerm, votedFor, log entries) from BoltDB before starting the node.
+3. Start background goroutines for Raft: apply loop, replication/heartbeat loop, and election timer loop.
+4. Create another gRPC server for Raft RPCs (RequestVote, AppendEntries, InstallSnapshot).
+4. Implement gRPC handlers for KV operations (Put, Get, Swap, Delete, Scan) that:
+	 - Check if the node is the leader; if not, return the current leader ID for redirection.
+	 - For write operations (Put, Swap, Delete), propose a command to the Raft node and wait for the response from the state machine via a channel.
+	 - For read operations (Get, Scan), serve directly from the in-memory map protected by a mutex.
 
 ## Fuzz Testing
 
