@@ -131,7 +131,7 @@ Even when crashing few partitions, the fuzz test was able to resume and complete
 
 Metric| Value | Scenario
 :-: | :-: | :-:
-(Max) Agg. Throughput | 230k ops/s | Workload B, 3 replicas
+(Max) Agg. Throughput | 23k ops/s | Workload B, 3 replicas
 (Min) Agg. Throughput | 272  ops/s | Worload E, 5 replicas
 (Max) Avg. Latency    | 350ms    | Workload E, 5 replicas
 (Min) Avg. Latency    | 0.6ms   | Workload F, 1 replica 
