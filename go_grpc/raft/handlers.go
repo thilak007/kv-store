@@ -88,6 +88,10 @@ func (s *raftService) AppendEntries(ctx context.Context, in *pb.AppendRequest) (
 					log.Printf("[Node %s] Log conflict at index %d: my term %d vs leader term %d, truncating",
 						s.node.nodeId, entry.Index, existing.Term, entry.Term)
 					s.node.log.TruncateFrom(entry.Index)
+					// Invalidate persistence watermark — entries from index onward are now stale on disk
+					if s.node.persistedUpTo >= entry.Index {
+						s.node.persistedUpTo = entry.Index - 1
+					}
 				}
 			}
 		}
@@ -174,6 +178,8 @@ func (s *raftService) InstallSnapshot(ctx context.Context, in *pb.InstallSnapsho
 
 		// Discard log entries now covered by the snapshot
 		s.node.log.CompactBefore(in.LastIncludedIndex)
+		// Snapshot replaces entries 1..LastIncludedIndex — reset persistence watermark
+		s.node.persistedUpTo = 0
 
 		// Apply snapshot to state machine
 		if len(in.Data) > 0 {

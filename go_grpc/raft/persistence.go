@@ -1,12 +1,9 @@
 package raft
 
 import (
-	"bytes"
 	"encoding/binary"
-	"encoding/gob"
 	"fmt"
 	"log"
-	"strconv"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -27,6 +24,8 @@ func (rf *RaftNode) takeSnapshot(index uint64, data []byte) {
 
 	// Discard log entries that are now part of the snapshot (1 through index)
 	rf.log.CompactBefore(index)
+	// Snapshot replaces entries 1..index — reset persistence watermark
+	rf.persistedUpTo = 0
 
 	// Persist snapshot state
 	rf.persistState()
@@ -35,10 +34,15 @@ func (rf *RaftNode) takeSnapshot(index uint64, data []byte) {
 		rf.nodeId, index, rf.snapshotTerm, rf.log.Len())
 }
 
-// persistState writes currentTerm, votedFor, and the log to bbolt.
+// persistState incrementally writes only changed log entries to bbolt.
 // Must be called with raftmu held.
+//
+// Strategy:
+//   - persistedUpTo tracks the highest index known to be correctly on disk.
+//   - On truncation, persistedUpTo is lowered to the truncation point.
+//   - On each call, we write entries [persistedUpTo+1 .. memLen] and delete
+//     any stale trailing entries [memLen+1 .. diskLen].
 func (rf *RaftNode) persistState() error {
-	return nil
 	return rf.db.Update(func(tx *bolt.Tx) error {
 		b, err := tx.CreateBucketIfNotExists([]byte(rf.raftBucket))
 		if err != nil {
@@ -62,80 +66,40 @@ func (rf *RaftNode) persistState() error {
 			b.Put([]byte("snapshotBuf"), rf.snapshotBuf)
 		}
 
-		memLast := rf.log.LastIndex()
-		diskLast := uint64(0)
+		// ── Incremental Log Persistence ────────────────────────────
+		memLen := rf.log.LastIndex()
+		diskLen := uint64(0)
 		if v := b.Get([]byte("logLen")); v != nil {
-			diskLast = u64(v)
+			diskLen = u64(v)
 		}
 
-		// Find first divergent index between in-memory and on-disk logs.
-		firstMismatch := uint64(1)
-		commonLast := memLast
-		if diskLast < commonLast {
-			commonLast = diskLast
-		}
-
-		// Preload on-disk log entries once to avoid repeated point lookups in the compare loop.
-		diskEntries := make(map[uint64][]byte, commonLast)
-		prefix := []byte("log.")
-		c := b.Cursor()
-		for k, v := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, v = c.Next() {
-			idx, parseErr := strconv.ParseUint(string(k[len(prefix):]), 10, 64)
-			if parseErr != nil {
-				continue
-			}
-			if idx >= 1 && idx <= commonLast {
-				diskEntries[idx] = v
-			}
-		}
-
-		for j := uint64(1); j <= commonLast; j++ {
-			entry := rf.log.Get(j)
-			if entry == nil {
-				firstMismatch = j
-				break
-			}
-
-			memData, err := entry.serializeEntry()
-			if err != nil {
-				return fmt.Errorf("failed to serialize log entry %d: %w", j, err)
-			}
-			diskData := diskEntries[j]
-			if !bytes.Equal(memData, diskData) {
-				firstMismatch = j
-				break
-			}
-			firstMismatch = j + 1
-		}
-
-		// Overwrite entries on disk from first mismatch through memory tail.
-		for j := firstMismatch; j <= memLast; j++ {
-			entry := rf.log.Get(j)
+		// Write entries from persistedUpTo+1 to memLen (covers new + replaced entries)
+		for i := rf.persistedUpTo + 1; i <= memLen; i++ {
+			entry := rf.log.Get(i)
 			if entry == nil {
 				continue
 			}
-			data, err := entry.serializeEntry()
+			data, err := encodeEntry(entry)
 			if err != nil {
-				return fmt.Errorf("failed to serialize log entry %d: %w", j, err)
+				return fmt.Errorf("failed to encode log entry %d: %w", i, err)
 			}
-			if err := b.Put([]byte(fmt.Sprintf("log.%d", j)), data); err != nil {
-				return fmt.Errorf("failed to persist log entry %d: %w", j, err)
-			}
-		}
-
-		// Delete stale trailing entries that no longer exist in memory.
-		if memLast < diskLast {
-			for j := memLast + 1; j <= diskLast; j++ {
-				if err := b.Delete([]byte(fmt.Sprintf("log.%d", j))); err != nil {
-					return fmt.Errorf("failed to delete stale log entry %d: %w", j, err)
-				}
+			if err := b.Put([]byte(fmt.Sprintf("log.%d", i)), data); err != nil {
+				return fmt.Errorf("failed to persist log entry %d: %w", i, err)
 			}
 		}
 
-		// Write current log length.
-		if err := b.Put([]byte("logLen"), b64(memLast)); err != nil {
+		// Delete stale trailing entries that no longer exist in memory
+		for i := memLen + 1; i <= diskLen; i++ {
+			if err := b.Delete([]byte(fmt.Sprintf("log.%d", i))); err != nil {
+				return fmt.Errorf("failed to delete stale log entry %d: %w", i, err)
+			}
+		}
+
+		// Update log length and persistence watermark
+		if err := b.Put([]byte("logLen"), b64(memLen)); err != nil {
 			return fmt.Errorf("failed to persist log length: %w", err)
 		}
+		rf.persistedUpTo = memLen
 
 		return nil
 	})
@@ -177,12 +141,14 @@ func (rf *RaftNode) LoadState() error {
 				if v == nil {
 					continue
 				}
-				entry, err := deserializeEntry(v)
+				entry, err := decodeEntry(v)
 				if err != nil {
-					return fmt.Errorf("failed to deserialize log entry %d: %w", i, err)
+					return fmt.Errorf("failed to decode log entry %d: %w", i, err)
 				}
 				rf.log.AppendEntry(entry)
 			}
+			// All loaded entries are now on disk — set watermark
+			rf.persistedUpTo = logLen
 		}
 
 		log.Printf("[Node %s] Loaded state from disk: term=%d, votedFor=%s, snapshotIndex=%d, logLen=%d",
@@ -207,22 +173,50 @@ func u64(b []byte) uint64 {
 	return binary.BigEndian.Uint64(b)
 }
 
-// serializeEntry converts a LogEntry to bytes for bbolt storage.
-func (e *LogEntry) serializeEntry() ([]byte, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	if err := enc.Encode(e); err != nil {
-		return nil, fmt.Errorf("failed to gob encode LogEntry: %w", err)
+// encodeEntry serializes a LogEntry to bytes using binary encoding (fast, no reflection).
+//
+// Format:
+//
+//	[term:8][index:8][type:4][cmdLen:8][cmd:N]
+func encodeEntry(e *LogEntry) ([]byte, error) {
+	cmdLen := 0
+	if e.Command != nil {
+		cmdLen = len(e.Command)
 	}
-	return buf.Bytes(), nil
+
+	buf := make([]byte, 8+8+4+8+cmdLen)
+	binary.BigEndian.PutUint64(buf[0:8], e.Term)
+	binary.BigEndian.PutUint64(buf[8:16], e.Index)
+	binary.BigEndian.PutUint32(buf[16:20], uint32(e.Type))
+	binary.BigEndian.PutUint64(buf[20:28], uint64(cmdLen))
+	if cmdLen > 0 {
+		copy(buf[28:], e.Command)
+	}
+	return buf, nil
 }
 
-// deserializeEntry reconstructs a LogEntry from bytes.
-func deserializeEntry(data []byte) (*LogEntry, error) {
-	var entry LogEntry
-	dec := gob.NewDecoder(bytes.NewReader(data))
-	if err := dec.Decode(&entry); err != nil {
-		return nil, fmt.Errorf("failed to gob decode LogEntry: %w", err)
+// decodeEntry reconstructs a LogEntry from binary-encoded bytes.
+func decodeEntry(data []byte) (*LogEntry, error) {
+	if len(data) < 28 {
+		return nil, fmt.Errorf("log entry too short: %d bytes", len(data))
 	}
-	return &entry, nil
+
+	cmdLen := int(binary.BigEndian.Uint64(data[20:28]))
+	if len(data) < 28+cmdLen {
+		return nil, fmt.Errorf("log entry truncated: expected %d bytes of command, got %d",
+			cmdLen, len(data)-28)
+	}
+
+	var cmd []byte
+	if cmdLen > 0 {
+		cmd = make([]byte, cmdLen)
+		copy(cmd, data[28:28+cmdLen])
+	}
+
+	return &LogEntry{
+		Term:    binary.BigEndian.Uint64(data[0:8]),
+		Index:   binary.BigEndian.Uint64(data[8:16]),
+		Type:    EntryType(binary.BigEndian.Uint32(data[16:20])),
+		Command: cmd,
+	}, nil
 }

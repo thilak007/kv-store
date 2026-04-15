@@ -61,6 +61,9 @@ type RaftNode struct {
 	snapshotTerm  uint64 // Term of last entry included in snapshot
 	snapshotBuf   []byte // Snapshot data (compact representation of state machine)
 
+	// ── Persistence tracking ──────────────────────────────────────
+	persistedUpTo uint64 // Highest log index known to be correctly on disk
+
 	// ── Volatile State ────────────────────────────────────────────
 	commitIndex uint64 // Highest log entry known to be committed
 	lastApplied uint64 // Highest log entry applied to state machine
