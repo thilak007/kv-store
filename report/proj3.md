@@ -146,6 +146,6 @@ Metric| Value | Scenario
 
 - For workloads like A (50% reads, 50% writes) and F (100% reads), the throughput is substantially higher with a replication factor of 1 compared to 3, as expected. However, for other workloads, the performance is actually better with a replication factor of 3 compared to 1, which may be due to the increased availability and load distribution across replicas, allowing for better handling of concurrent requests.
 
-- For workload A with varying clients, throughput increases with more clients, but the rate of increase diminishes as we approach the limits of the system's capacity. With a replication factor of 3, the throughput is generally lower than with a replication factor of 1 due to the overhead of replication, but it provides better fault tolerance and availability.
+- For workload A with varying clients, throughput increases with more clients, but the rate of increase diminishes as we approach the limits of the system's capacity. With a replication factor of 5, the throughput is generally lower than with a replication factor of 1 due to the overhead of replication, but it provides better fault tolerance and availability.
 
 ## Additional Discussion
