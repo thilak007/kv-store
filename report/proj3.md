@@ -31,14 +31,16 @@ Durability and Paritioning of key space is introduced to the system in the follo
 
 ### Server:
 
-- When the server boots up, it registers itself with the manager and obtains the partition ID.
-- Given a disk file path to durably persist the in-memory key-value pairs, we perform the following:
+1. Initialize RaftNode with node ID, peer IDs, state machine, BoltDB instance, and gRPC clients for peers.
+2. Load persisted Raft state (currentTerm, votedFor, log entries) from BoltDB before starting the node.
+3. Start background goroutines for Raft: apply loop, replication/heartbeat loop, and election timer loop.
+4. Create another gRPC server for Raft RPCs (RequestVote, AppendEntries, InstallSnapshot).
+5. Implement gRPC handlers for KV operations (Put, Get, Swap, Delete, Scan) that:
+	 - Check if the node is the leader; if not, return the current leader ID for redirection.
+	 - For write operations (Put, Swap, Delete), propose a command to the Raft node and wait for the response from the state machine via a channel.
+	 - For read operations (Get, Scan), serve directly from the in-memory map protected by a mutex.
 
-  1. Create a directory to store the file for the DB if it doesn't exist. bbolt mmaps the entire file to memory. This provides fast disk I/O.
-  2. The key-value pairs are stored in a bucket within a file for a single partition.
-  3. After registering with the manager, the server loads the key-value pairs present on disk, which is initially empty.
 
-Whenever a new command arrives, bbolt uses transactions to perform a read or write. This ensures ACID properties. Updates are first persisted on disk before updating the in-memory map data structure.
 
 ### Raft Consensus:
 - A new go_grpc/raft/ package implements the Raft consensus algorithm, providing fault-tolerant log replication across partition replicas.
@@ -98,19 +100,6 @@ However, if the follower receives an AppendEntries from the leader (replication 
 
 You will run the four described testcase scenarios during demo time.
 
-### Explanations
-
-## Server Changes:
-
-1. Initialize RaftNode with node ID, peer IDs, state machine, BoltDB instance, and gRPC clients for peers.
-2. Load persisted Raft state (currentTerm, votedFor, log entries) from BoltDB before starting the node.
-3. Start background goroutines for Raft: apply loop, replication/heartbeat loop, and election timer loop.
-4. Create another gRPC server for Raft RPCs (RequestVote, AppendEntries, InstallSnapshot).
-4. Implement gRPC handlers for KV operations (Put, Get, Swap, Delete, Scan) that:
-	 - Check if the node is the leader; if not, return the current leader ID for redirection.
-	 - For write operations (Put, Swap, Delete), propose a command to the Raft node and wait for the response from the state machine via a channel.
-	 - For read operations (Get, Scan), serve directly from the in-memory map protected by a mutex.
-
 ## Fuzz Testing
 
 <u>Parsed the following fuzz testing results:</u>
@@ -140,12 +129,23 @@ Even when crashing few partitions, the fuzz test was able to resume and complete
 
 ### Comments
 
-We observed that the throughput decreases as the replication factor increases, which is expected due to the additional overhead of replicating data across more servers. However, the system maintains reasonable performance even with higher replication factors, demonstrating the efficiency of our Raft implementation and the underlying BoltDB storage.
+Metric| Value | Scenario
+:-: | :-: | :-:
+(Max) Agg. Throughput | 230k ops/s | Workload B, 3 replicas
+(Min) Agg. Throughput | 272  ops/s | Worload E, 5 replicas
+(Max) Avg. Latency    | 350ms    | Workload E, 5 replicas
+(Min) Avg. Latency    | 0.6ms   | Workload F, 1 replica 
 
-We also noticed that the latency increases with higher replication factors, especially under write-heavy workloads, as the leader must wait for acknowledgments from more followers before committing entries. However, read-heavy workloads show less impact on latency, as reads can be served by any replica once the data is committed.
+- We observed that the throughput decreases as the replication factor increases, which is expected due to the additional overhead of replicating data across more servers. However, the system maintains reasonable performance even with higher replication factors, demonstrating the efficiency of our Raft implementation and the underlying BoltDB storage.
 
-For workloads like A (50% reads, 50% writes) and F (100% reads), the throughput is substantially higher with a replication factor of 1 compared to 3, as expected. However, for other workloads, the performance is actually better with a replication factor of 3 compared to 1, which may be due to the increased availability and load distribution across replicas, allowing for better handling of concurrent requests.
+- We also noticed that the latency increases with higher replication factors, especially under write-heavy workloads, as the leader must wait for acknowledgments from more followers before committing entries. However, read-heavy workloads show less impact on latency, as reads can be served by any replica once the data is committed.
 
-For workload A with varying clients, throughput increases with more clients, but the rate of increase diminishes as we approach the limits of the system's capacity. With a replication factor of 3, the throughput is generally lower than with a replication factor of 1 due to the overhead of replication, but it provides better fault tolerance and availability.
+- Maximum throughput was achieved with workload B (95% reads, 5% writes) and a replication factor of 3, indicating that the system can handle read-heavy workloads efficiently even with multiple replicas. On the other hand, the minimum throughput was observed with workload E (50% reads, 50% writes) and a replication factor of 5, which is expected due to the increased overhead of handling more replicas and the balanced read/write mix.
+
+- Maximum latency was observed with workload E and a replication factor of 5, which is likely due to the increased contention and overhead of replicating writes across multiple servers. Minimum latency was observed with workload F (100% reads) and a replication factor of 1, as there is no replication overhead and all reads can be served directly from the single replica.
+
+- For workloads like A (50% reads, 50% writes) and F (100% reads), the throughput is substantially higher with a replication factor of 1 compared to 3, as expected. However, for other workloads, the performance is actually better with a replication factor of 3 compared to 1, which may be due to the increased availability and load distribution across replicas, allowing for better handling of concurrent requests.
+
+- For workload A with varying clients, throughput increases with more clients, but the rate of increase diminishes as we approach the limits of the system's capacity. With a replication factor of 3, the throughput is generally lower than with a replication factor of 1 due to the overhead of replication, but it provides better fault tolerance and availability.
 
 ## Additional Discussion
