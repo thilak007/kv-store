@@ -91,7 +91,7 @@ Durability and Replication is introduced to the system in the following manner:
 
 ##### Follower
  1. Reception: The KV handler receives the PUT, calls isLeader(), discovers it is not the leader.
- 2. Reject: Returns PutResponse{LeaderId: <current leader>} immediately — no log replication or apply occurs on the follower. The client is responsible for redirecting to the leader.
+ 2. Reject: Returns PutResponse{LeaderId: `current leaderID`>} immediately — no log replication or apply occurs on the follower. The client is responsible for redirecting to the leader.
 
 However, if the follower receives an AppendEntries from the leader (replication path):
  1. The AppendEntries handler validates term and log consistency.
