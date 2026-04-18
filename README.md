@@ -8,7 +8,7 @@ This project implements a production-inspired distributed KV store with the foll
 * Strong Consistency via **Raft replication**
 * Durability by persisting data using bbolt storage engine.
 
-The kvstore is housed in the `go_grpc/` folder and written in Go.
+The source code for the kvstore is housed in the `go_grpc/` folder and written in Go.
 
 ## Design Walkthrough
 
