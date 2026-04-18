@@ -1,0 +1,14 @@
+PUT key1 value1
+PUT key2 value2
+PUT key3 value3
+GET key1
+GET key2
+SWAP key2 value20
+PUT key1 value10
+DELETE key3
+GET key3
+SCAN key1 key4
+DELETE key1
+DELETE key2
+SCAN key1 key4
+STOP

@@ -1,0 +1,18 @@
+PUT key5 not_found
+PUT key6 not_found
+PUT key7 not_found
+GET key5 value5
+GET key6 value6
+SWAP key6 value6
+PUT key5 found
+DELETE key7 found
+GET key7 null
+SCAN key5 key8 BEGIN
+  key5 value50
+  key6 value60
+SCAN END
+DELETE key5 found
+DELETE key6 found
+SCAN key5 key8 BEGIN
+SCAN END
+STOP

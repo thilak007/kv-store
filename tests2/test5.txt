@@ -1,0 +1,8 @@
+GET key2
+GET key4
+GET key7
+PUT key2 updated_after_recovery
+GET key2
+DELETE key2
+GET key2
+STOP

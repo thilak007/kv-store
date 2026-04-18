@@ -1,30 +1,15 @@
-# Distributed KVStore
-
-A distributed, fault-tolerant, and strongly consistent key-value (KV) store designed to scale horizontally. The system supports partitioning, replication, and linearizable consistency using a consensus protocol.
-
-This project implements a production-inspired distributed KV store with the following goals:
-
-* Scalability by partitioning the key space
-* Strong Consistency via **Raft replication**
-* Durability by persisting data using bbolt storage engine.
-
-The source code for the kvstore is housed in the `go_grpc/` folder and majorly written in Go.
-
-### Architecture Diagram:
-
-![KVStore Architecture](kvstore.png)
-
+# CS 739 MadKV Project 3
+- Name `Gokulnath Sourirajan`,  Email `sourirajan@wisc.edu`
+- Name `Thilak Raj Murugan`,    Email `tmurugan2@wisc.edu`
 
 ## Design Walkthrough
 
-- We built raft as a separate library from the kv store server layer. This ensures that the raft library can be reused.
-
 ### Overview
 
-Durability and Replication is introduced to the system in the following manner:
+Durability and Paritioning of key space is introduced to the system in the following manner:
 
 - **Durability**: 
-  - We're using BBolt for persisting the KV store and the durable state of the raft consensus algorithm.
+  - Continued using BBolt for persistence of the KV store and the durable state of the raft consensus.
 - **Replication**: 
   - We use raft consensus for replication. 
   - The leader server in each partition is responsible for handling all client requests and replicating the updates to the follower servers in the same partition. 
@@ -84,7 +69,7 @@ Durability and Replication is introduced to the system in the following manner:
     - After all peer responses, tryCommit() advances commitIndex if a majority has replicated the entry.
 
 #### Apply Loop
-- A separate goroutine (applyLoop) watches applyCh. When commitIndex advances, it applies entries from `lastApplied+1` to `commitIndex` to the KV state machine via sm.Apply(). NoOp entries are skipped.
+- A separate goroutine (applyLoop) watches applyCh. When commitIndex advances, it applies entries from lastApplied+1 to commitIndex to the KV state machine via sm.Apply(). NoOp entries are skipped.
 
 ##### Leader
  1. Reception: The KV handler (server/main.go) receives the PUT, checks isLeader(). If follower, returns immediately with LeaderId for client redirect.
@@ -96,10 +81,71 @@ Durability and Replication is introduced to the system in the following manner:
 
 ##### Follower
  1. Reception: The KV handler receives the PUT, calls isLeader(), discovers it is not the leader.
- 2. Reject: Returns PutResponse{LeaderId: `current leaderID`>} immediately — no log replication or apply occurs on the follower. The client is responsible for redirecting to the leader.
+ 2. Reject: Returns PutResponse{LeaderId: <current leader>} immediately — no log replication or apply occurs on the follower. The client is responsible for redirecting to the leader.
 
 However, if the follower receives an AppendEntries from the leader (replication path):
  1. The AppendEntries handler validates term and log consistency.
  2. New entries are appended to the local log and persisted.
  3. If leaderCommit > commitIndex, the applyCh fires asynchronously.
  4. The applyLoop applies committed entries to the follower's BoltDB state machine, keeping it in sync with the leader. This ensures that followers maintain an up-to-date state, ready to take over as leader if needed.
+
+### Proto: 
+ 
+#### Add new service for raft consensus with 3 functions:
+ - RequestVote - Used by the followers to request votes from other servers in the partition during leader election.
+ - AppendEntries - Used by the leader to replicate log entries to the followers and to send heartbeats to maintain its leadership.
+ - InstallSnapshot - Used by the leader to send a snapshot of the current state to a follower that is significantly behind in the log replication.
+
+## Self-provided Testcases
+
+You will run the four described testcase scenarios during demo time.
+
+## Fuzz Testing
+
+<u>Parsed the following fuzz testing results:</u>
+
+server_rf | crashing | outcome
+:-: | :-: | :-:
+5 | no | PASSED
+5 | yes | PASSED
+
+You may be asked to run a crashing fuzz test during demo time.
+
+### Comments
+
+We observed that the server correctly handles concurrent operations on shared keys, maintaining linearizability and returning consistent results. The fuzz testing revealed no assertion failures, indicating that our concurrency control mechanisms are robust under various workloads and contention levels.
+
+Even when crashing few partitions, the fuzz test was able to resume and complete successfully after the crashed server was restarted, demonstrating the system's fault tolerance and ability to recover from failures while maintaining data integrity.
+
+## YCSB Benchmarking
+
+<u>10 clients throughput/latency across workloads & replication factors:</u>
+
+![ten-clients](plots-p3/ycsb-ten-clients.png)
+
+<u>Agg. throughput trend vs. number of clients with different replication factors:</u>
+
+![tput-trend](plots-p3/ycsb-tput-trend.png)
+
+### Comments
+
+Metric| Value | Scenario
+:-: | :-: | :-:
+(Max) Agg. Throughput | 23k ops/s | Workload B, 3 replicas
+(Min) Agg. Throughput | 272  ops/s | Worload E, 5 replicas
+(Max) Avg. Latency    | 350ms    | Workload E, 5 replicas
+(Min) Avg. Latency    | 0.6ms   | Workload F, 1 replica 
+
+- We observed that the throughput decreases as the replication factor increases, which is expected due to the additional overhead of replicating data across more servers. However, the system maintains reasonable performance even with higher replication factors, demonstrating the efficiency of our Raft implementation and the underlying BoltDB storage.
+
+- We also noticed that the latency increases with higher replication factors, especially under write-heavy workloads, as the leader must wait for acknowledgments from more followers before committing entries. However, read-heavy workloads show less impact on latency, as reads can be served by any replica once the data is committed.
+
+- Maximum throughput was achieved with workload B (95% reads, 5% writes) and a replication factor of 3, indicating that the system can handle read-heavy workloads efficiently even with multiple replicas. On the other hand, the minimum throughput was observed with workload E (50% reads, 50% writes) and a replication factor of 5, which is expected due to the increased overhead of handling more replicas and the balanced read/write mix.
+
+- Maximum latency was observed with workload E and a replication factor of 5, which is likely due to the increased contention and overhead of replicating writes across multiple servers. Minimum latency was observed with workload F (100% reads) and a replication factor of 1, as there is no replication overhead and all reads can be served directly from the single replica.
+
+- For workloads like A (50% reads, 50% writes) and F (100% reads), the throughput is substantially higher with a replication factor of 1 compared to 3, as expected. However, for other workloads, the performance is actually better with a replication factor of 3 compared to 1, which may be due to the increased availability and load distribution across replicas, allowing for better handling of concurrent requests.
+
+- For workload A with varying clients, throughput increases with more clients, but the rate of increase diminishes as we approach the limits of the system's capacity. With a replication factor of 5, the throughput is generally lower than with a replication factor of 1 due to the overhead of replication, but it provides better fault tolerance and availability.
+
+## Additional Discussion

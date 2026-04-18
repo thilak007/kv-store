@@ -1,0 +1,15 @@
+PUT key1 valueA1
+GET key1
+PUT key2 valueA2
+SWAP key1 valueA10
+GET key1
+SWAP key1 valueA100
+GET key2
+DELETE key2
+GET key2
+PUT key1 valueA1000
+SCAN key1 key3
+DELETE key1
+GET key1
+SCAN key1 key3
+STOP
