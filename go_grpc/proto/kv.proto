@@ -1,8 +1,8 @@
 syntax = "proto3";
 
-option go_package = "go_grpc/proto";
-
 package kvservice;
+
+option go_package = "go_grpc/proto";
 
 // -----------------------------
 // Service
@@ -50,42 +50,52 @@ message RegisterRequest {
   int32 server_id = 1;
 }
 
-
 message PartitionMapRequest {}
-
 
 // -----------------------------
 // Responses
 // -----------------------------
-message PutResponse{
+message PutResponse {
   bool already_exists = 1;
+  string leader_id = 2;
 }
 
-message SwapResponse{
+message SwapResponse {
   string old_value = 1; // if exists
   bool exists = 2;
+  string leader_id = 3;
 }
 
-message GetResponse{
+message GetResponse {
   string value = 1; // if exists
   bool exists = 2;
+  string leader_id = 3;
 }
 
 message ScanResponse {
   string key = 1;
   string value = 2;
+  string leader_id = 3;
 }
 
-message DeleteResponse{
+message DeleteResponse {
   bool exists = 1;
+  string leader_id = 2;
 }
 
-message RegisterResponse{
+message RegisterResponse {
   int32 partition_id = 1;
   bool success = 2;
+  string leader_id = 3;
 }
 
-message PartitionMapResponse{
+// Each partition maps to multiple replica addresses
+message PartitionEntry {
+  repeated string addresses = 1;
+}
+
+message PartitionMapResponse {
   int32 num_partitions = 1;
-  map<int32, string> partition_map = 2;
+  map<int32, PartitionEntry> partition_map = 2;
+  string leader_id = 3;
 }

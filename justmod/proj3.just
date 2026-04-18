@@ -6,15 +6,17 @@ default:
 
 # install extra dependencies of your KV code
 deps:
-    # FIXME: your dependency installation commands here
+    cd go_grpc && go mod tidy
 
 # build your executables in release mode
-build:
-    # FIXME: your build commands here (don't include clean)
+build: deps
+    cd go_grpc/server && go build -o ../../bin/server main.go
+    cd go_grpc/client && go build -o ../../bin/client main.go
+    cd go_grpc/manager && go build -o ../../bin/manager main.go
 
 # clean the build of your executables
 clean:
-    # FIXME: your clean commands here
+    rm -rf bin/
 
 # run your KV store manager replica
 manager rep_id="0" \
@@ -24,39 +26,30 @@ manager rep_id="0" \
         server_rf="3" \
         servers="127.0.0.1:3777,127.0.0.1:3778,127.0.0.1:3779,127.0.0.1:3780,127.0.0.1:3781,127.0.0.1:3782"\
         backer_path="./backer.m.0":
-    # FIXME: your manager run command here, listening on 0.0.0.0:p2p_port for
-    #        peer replica connections and 0.0.0.0:man_port for both server and
-    #        client registration requests
+    ./bin/manager --replica_id {{rep_id}} --man_listen 0.0.0.0:{{man_port}} --p2p_listen 0.0.0.0:{{p2p_port}} --peer_addrs {{peers}} --server_rf {{server_rf}} --server_addrs "{{servers}}" --backer_path {{backer_path}}
+
 
 # run your KV store server replica
 server part_id="0" \
        rep_id="0" \
        managers="127.0.0.1:3666,127.0.0.1:3667,127.0.0.1:3668" \
+       ip="127.0.0.1" \
        api_port="3777" \
        p2p_port="3707" \
        peers="127.0.0.1:3708,127.0.0.1:3709" \
        backer_path="./backer.s0.0":
-    # FIXME: your server run command here. The server should first contact the
-    #        replicated managers to get its assignment of key range(s). It then
-    #        listens on 0.0.0.0:p2p_port for peer replica connections and
-    #        0.0.0.0:api_port for new clients, and stores all durable state under
-    #        backer_path
+    ./bin/server {{part_id}} {{rep_id}} {{managers}} {{ip}}:{{api_port}} {{ip}}:{{p2p_port}} {{peers}} {{backer_path}}
 
 # run you KV store client in stdin/out interface mode
-client managers="127.0.0.1:3666,127.0.0.1:3667,127.0.0.1:3668":
-    # FIXME: your client run command here, querying the replicated managers
-    #        for server registration information, and then connects to the
-    #        servers ready to perform operations
+client managers="127.0.0.1:3666,127.0.0.1:3667,127.0.0.1:3668" keyspace="random":
+    ./bin/client {{managers}} {{keyspace}}
 
 # kill all processes of your KV store system
 kill:
-    # FIXME: your kill commands here
-    #        make sure that it kills all server, clients, and any extra helper
-    #        processes of your system; redirecting both out & err to /dev/null
-    #        is recommended
-    #   TIP: commands such as 'pkill' may return non-zero exit code on success,
-    #        which would by default abort the 'just' recipe early; prepend the
-    #        command with a '-' sign to ignore its exit code
+    -pkill -f './bin/server' > /dev/null 2>&1
+    -pkill -f './bin/client' > /dev/null 2>&1
+    -pkill -f './bin/manager' > /dev/null 2>&1
+    rm -rf ./backer.*
 
 # NOTE: feel free to add more recipes as you see fit...
 #       also feel free to add extra parameters to the recipes as you see fit,
@@ -70,6 +63,7 @@ service node="s0.0" \
         managers="127.0.0.1:3666,127.0.0.1:3667,127.0.0.1:3668" \
         manager_p2ps="127.0.0.1:3606,127.0.0.1:3607,127.0.0.1:3608" \
         server_rf="3" \
+        ip="127.0.0.1" \
         servers="127.0.0.1:3777,127.0.0.1:3778,127.0.0.1:3779,127.0.0.1:3780,127.0.0.1:3781,127.0.0.1:3782" \
         server_p2ps="127.0.0.1:3707,127.0.0.1:3708,127.0.0.1:3709,127.0.0.1:3710,127.0.0.1:3711,127.0.0.1:3712" \
         backer_prefix="./backer":
@@ -80,6 +74,7 @@ service node="s0.0" \
             $({{python_run}} justmod/xtract.py partid "{{node}}") \
             $({{python_run}} justmod/xtract.py repid "{{node}}") \
             "{{managers}}" \
+            "{{ip}}" \
             $({{python_run}} justmod/xtract.py portof "{{servers}}" "{{node}}" "{{server_rf}}") \
             $({{python_run}} justmod/xtract.py portof "{{server_p2ps}}" "{{node}}" "{{server_rf}}") \
             $({{python_run}} justmod/xtract.py peersof "{{server_p2ps}}" "{{node}}" "{{server_rf}}") \
@@ -106,7 +101,7 @@ fuzz server_rf="5" crashing="no" \
     cargo run -p runner -r --bin fuzzer -- \
         --num-clis 5 \
         --conflict \
-        --client-just-args p3::client "{{managers}}" \
+        --client-just-args p3::client "{{managers}}"  "fuzz" \
         | tee "{{tmpdir_prefix}}/fuzz/fuzz-{{server_rf}}-{{crashing}}.log"
     just p3::kill
 
@@ -119,7 +114,7 @@ bench nclis wload server_rf="3" \
     cargo run -p runner -r --bin bencher -- \
         --num-clis "{{nclis}}" \
         --workload "{{wload}}" \
-        --client-just-args p3::client "{{managers}}" \
+        --client-just-args p3::client "{{managers}}"  "ycsb"\
         | tee "{{tmpdir_prefix}}/bench/bench-{{nclis}}-{{wload}}-{{server_rf}}.log"
     # just p3::kill
 
