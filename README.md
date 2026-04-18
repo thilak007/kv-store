@@ -8,11 +8,16 @@ This project implements a production-inspired distributed KV store with the foll
 * Strong Consistency via **Raft replication**
 * Durability by persisting data using bbolt storage engine.
 
-The source code for the kvstore is housed in the `go_grpc/` folder and written in Go.
+The source code for the kvstore is housed in the `go_grpc/` folder and majorly written in Go.
+
+### Architecture Diagram:
+
+![KVStore Architecture](kvstore.png)
+
 
 ## Design Walkthrough
 
-- Built raft as a separate library from the kv store server layer. This ensures that the raft library can be reused.
+- We built raft as a separate library from the kv store server layer. This ensures that the raft library can be reused.
 
 ### Overview
 
