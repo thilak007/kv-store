@@ -1,3 +1,15 @@
+# Distributed KVStore
+
+A distributed, fault-tolerant, and strongly consistent key-value (KV) store designed to scale horizontally. The system supports partitioning, replication, and linearizable consistency using a consensus protocol.
+
+This project implements a production-inspired distributed KV store with the following goals:
+
+* Scalability via partitioning (sharding)
+* Strong Consistency via **Raft replication**
+* Durability by persisting data using bbolt storage engine.
+
+The kvstore is housed in the `go_grpc/` folder and written in Go.
+
 ## Design Walkthrough
 
 - Built raft as a separate library from the kv store server layer. This ensures that the raft library can be reused.
