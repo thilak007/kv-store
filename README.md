@@ -4,7 +4,7 @@ A distributed, fault-tolerant, and strongly consistent key-value (KV) store desi
 
 This project implements a production-inspired distributed KV store with the following goals:
 
-* Scalability via partitioning (sharding)
+* Scalability by partitioning the key space
 * Strong Consistency via **Raft replication**
 * Durability by persisting data using bbolt storage engine.
 
