@@ -222,4 +222,4 @@ echo "✓ All YCSB tests completed successfully!"
 echo "========================================="
 
 
-# ./p3_2parts.sh 2>&1 | tee "output/benchmarks/p3_2parts_c20_30_rf_5_1_parts_3_$(date +%Y%m%d_%H%M%S).log"
+# ./ycsb_demo.sh 2>&1 | tee "output/benchmarks/ycsb_c20_30_rf_5_1_parts_3_$(date +%Y%m%d_%H%M%S).log"
