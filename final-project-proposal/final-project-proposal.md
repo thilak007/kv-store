@@ -1,8 +1,8 @@
 # Project Proposal: PebbleDB vs. bbolt
 
 ## Group Members
-- Name `Gokulnath Sourirajan`,  Email `sourirajan@wisc.edu`
-- Name `Thilak Raj Murugan`,    Email `tmurugan2@wisc.edu`
+- Name: `Gokulnath Sourirajan`,  Email: `sourirajan@wisc.edu`
+- Name: `Thilak Raj Murugan`,    Email: `tmurugan2@wisc.edu`
 
 ## Option Selected
 

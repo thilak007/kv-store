@@ -1,0 +1,18 @@
+% Comfortable margins, tight spacing to fit one page
+\usepackage[margin=0.7in]{geometry}
+
+\setlength{\parskip}{0pt}
+\setlength{\parindent}{0pt}
+
+% Tighter leading
+\linespread{0.90}
+
+% Tighten list spacing without enumitem
+\makeatletter
+\def\@listi{\leftmargin\leftmargini
+            \topsep 0pt
+            \parsep 0pt
+            \itemsep 0pt}
+\let\@listI\@listi
+\@listi
+\makeatother
