@@ -201,19 +201,19 @@ echo "Starting YCSB Test Suite"
 echo "========================================="
 
 # # 1) 10 clients on workloads A-F for RF in {1,3,5}
-for workload in a b c d e f; do
-    for rf in 1 3 5; do
-        run_ycsb_test 10 "${workload}" "${rf}"
-    done
-done
+# for workload in a b c d e f; do
+#     for rf in 1 3 5; do
+#         run_ycsb_test 10 "${workload}" "${rf}"
+#     done
+# done
 
 # 2) Workload A, scale clients from 1, 20, 30 for RF in {1,5}
 # Chosen client counts to represent the 1->30 scaling curve.
-# for nclis in 1 20 30; do
-#     for rf in 1 5; do
-#         run_ycsb_test "${nclis}" a "${rf}"
-#     done
-# done
+for nclis in 1 20 30; do
+    for rf in 1 5; do
+        run_ycsb_test "${nclis}" a "${rf}"
+    done
+done
 
 echo ""
 echo "========================================="
