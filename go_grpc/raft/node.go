@@ -6,7 +6,7 @@ import (
 	"log"
 	"sync"
 
-	bolt "go.etcd.io/bbolt"
+	"github.com/cockroachdb/pebble"
 )
 
 // NodeRole represents the current role of a Raft node.
@@ -79,8 +79,8 @@ type RaftNode struct {
 
 	// ── State Machine & Storage ───────────────────────────────────
 	sm         StateMachine // Interface to apply committed commands to the KV store
-	db         *bolt.DB     // bbolt database (shared with server)
-	raftBucket string       // Bucket name for Raft log in bbolt
+	db         *pebble.DB   // PebbleDB database (shared with server)
+	raftBucket string       // Bucket name for Raft log in PebbleDB
 
 	// ── Role & Channels ──────────────────────────────────────────
 	role            NodeRole
@@ -94,7 +94,7 @@ type RaftNode struct {
 }
 
 // NewRaftNode creates and initializes a new Raft node.
-func NewRaftNode(id string, peers []string, kvsm StateMachine, db *bolt.DB, raftBucket string, peerClients map[string]pb.RaftClient) *RaftNode {
+func NewRaftNode(id string, peers []string, kvsm StateMachine, db *pebble.DB, raftBucket string, peerClients map[string]pb.RaftClient) *RaftNode {
 	if peerClients == nil {
 		peerClients = make(map[string]pb.RaftClient)
 	}

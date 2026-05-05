@@ -21,7 +21,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/peer"
 
-	bolt "go.etcd.io/bbolt"
+	"github.com/cockroachdb/pebble"
 )
 
 var (
@@ -38,7 +38,7 @@ type ResponseMessage struct {
 
 type server struct {
 	pb.UnimplementedKVServiceServer
-	db            *bolt.DB
+	db            *pebble.DB
 	bucketName    string
 	replicaId     int32
 	myPartitionId int32
@@ -48,7 +48,7 @@ type server struct {
 }
 
 type kvStateMachine struct {
-	db         *bolt.DB
+	db         *pebble.DB
 	bucketName string
 	responseCh chan ResponseMessage
 }
@@ -103,18 +103,15 @@ func (sm *kvStateMachine) Apply(rawCmd []byte, isLeader bool) error {
 	return fmt.Errorf("Invalid command: %s", cmd.Op)
 }
 
-func insertOrUpdateRecord(key string, value string, db *bolt.DB, bucketName string) (bool, string, error) {
+func insertOrUpdateRecord(key string, value string, db *pebble.DB, bucketName string) (bool, string, error) {
 
 	oldvalue, exists := records[key]
 
-	// Persist to BoltDB
-	err := db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(bucketName))
-		return b.Put([]byte(key), []byte(value))
-	})
+	// Persist to PebbleDB
+	err := db.Set(kvKey(bucketName, key), []byte(value), pebble.Sync)
 
 	if err != nil {
-		log.Printf("Failed to insert/update record to BoltDB: %v", err)
+		log.Printf("Failed to insert/update record to PebbleDB: %v", err)
 		return exists, oldvalue, err
 	}
 
@@ -123,7 +120,7 @@ func insertOrUpdateRecord(key string, value string, db *bolt.DB, bucketName stri
 	return exists, oldvalue, nil
 }
 
-func deleteRecord(key string, db *bolt.DB, bucketName string) (bool, error) {
+func deleteRecord(key string, db *pebble.DB, bucketName string) (bool, error) {
 	_, exists := records[key]
 
 	// The deleteRecord is always called for an existing key, this is just an additional check.
@@ -131,14 +128,11 @@ func deleteRecord(key string, db *bolt.DB, bucketName string) (bool, error) {
 		return false, nil
 	}
 
-	// Persist to BoltDB
-	err := db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(bucketName))
-		return b.Delete([]byte(key))
-	})
+	// Persist to PebbleDB
+	err := db.Delete(kvKey(bucketName, key), pebble.Sync)
 
 	if err != nil {
-		log.Printf("Failed to delete record from BoltDB: %v", err)
+		log.Printf("Failed to delete record from PebbleDB: %v", err)
 		return exists, err
 	}
 
@@ -147,6 +141,22 @@ func deleteRecord(key string, db *bolt.DB, bucketName string) (bool, error) {
 		delete(records, key)
 	}
 	return exists, nil
+}
+
+func kvKey(bucketName string, key string) []byte {
+	return []byte(bucketName + "/" + key)
+}
+
+func kvPrefix(bucketName string) []byte {
+	return []byte(bucketName + "/")
+}
+
+func kvPrefixUpperBound(bucketName string) []byte {
+	prefix := kvPrefix(bucketName)
+	upper := make([]byte, len(prefix)+1)
+	copy(upper, prefix)
+	upper[len(prefix)] = 0xFF
+	return upper
 }
 
 func (s *server) isLeader() (bool, string) {
@@ -189,7 +199,7 @@ func (s *server) Put(ctx context.Context, in *pb.PutRequest) (*pb.PutResponse, e
 	resp := <-s.responseCh
 
 	if resp.Err != nil {
-		log.Printf("[ReqID: %d] Failed to persist PUT to BoltDB: %v", reqID, resp.Err)
+		log.Printf("[ReqID: %d] Failed to persist PUT to PebbleDB: %v", reqID, resp.Err)
 		return nil, resp.Err
 	}
 
@@ -231,7 +241,7 @@ func (s *server) Swap(ctx context.Context, in *pb.SwapRequest) (*pb.SwapResponse
 	resp := <-s.responseCh
 
 	if resp.Err != nil {
-		log.Printf("[ReqID: %d] Failed to persist SWAP to BoltDB: %v", reqID, resp.Err)
+		log.Printf("[ReqID: %d] Failed to persist SWAP to PebbleDB: %v", reqID, resp.Err)
 		return nil, resp.Err
 	}
 
@@ -362,7 +372,7 @@ func (s *server) Delete(ctx context.Context, in *pb.DeleteRequest) (*pb.DeleteRe
 	resp := <-s.responseCh
 
 	if resp.Err != nil {
-		log.Printf("[ReqID: %d] Failed to persist DELETE to BoltDB: %v", reqID, resp.Err)
+		log.Printf("[ReqID: %d] Failed to persist DELETE to PebbleDB: %v", reqID, resp.Err)
 		return nil, resp.Err
 	}
 
@@ -497,10 +507,10 @@ func main() {
 	peerAddrsRaw := os.Args[6]
 	peerAddrs := parseAddressList(peerAddrsRaw)
 
-	storageDir := os.Args[7] // Path to the directory where BoltDB will store its data files
+	storageDir := os.Args[7] // Path to the directory where PebbleDB will store its data files
 	dbPath := filepath.Join(storageDir, "kvstore.db")
 	bucketName := "kvstore_bucket"
-	// BoltDB bucket for Raft log and it's state persistence
+	// PebbleDB bucket for Raft log and it's state persistence
 	raftStateBucket := "raft_log_bucket"
 
 	log.Printf("API Listen addr is %s, Peer Listern Addr is %s", apiListenAddr, raftListenAddr)
@@ -513,34 +523,30 @@ func main() {
 		log.Fatalf("Failed to create storage directory: %v", err)
 	}
 
-	// Open or create the BoltDB database
-	db, err := bolt.Open(dbPath, 0600, nil)
+	// Open or create the PebbleDB database
+	db, err := pebble.Open(dbPath, &pebble.Options{})
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
 	defer db.Close()
 
-	// Create a bucket for our key-value pairs if it doesn't exist
-	err = db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists([]byte(bucketName))
-		return err
-	})
-	if err != nil {
-		log.Fatalf("Failed to create bucket: %v", err)
-	}
-
-	// Load existing data from BoltDB into the in-memory map
+	// Load existing data from PebbleDB into the in-memory map
 	log.Println("Loading data from persistent storage...")
-	err = db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(bucketName))
-		return b.ForEach(func(k, v []byte) error {
-			records[string(k)] = string(v)
-			return nil
-		})
+	iter, err := db.NewIter(&pebble.IterOptions{
+		LowerBound: kvPrefix(bucketName),
+		UpperBound: kvPrefixUpperBound(bucketName),
 	})
+	if err != nil {
+		log.Fatalf("Failed to create Pebble iterator: %v", err)
+	}
+	for iter.First(); iter.Valid(); iter.Next() {
+		trimmedKey := strings.TrimPrefix(string(iter.Key()), string(kvPrefix(bucketName)))
+		records[trimmedKey] = string(iter.Value())
+	}
+	err = iter.Close()
 
 	if err != nil {
-		log.Fatalf("Failed to load data from BoltDB: %v", err)
+		log.Fatalf("Failed to load data from PebbleDB: %v", err)
 	}
 	log.Printf("Loaded %d key-value pairs from persistent storage", len(records))
 
@@ -557,7 +563,7 @@ func main() {
 	raftNode := raft.NewRaftNode(nodeID, peerNodeIDs, stateMachine, db, raftStateBucket, peerClients)
 
 	log.Printf("Initialized raft node: %s", raftNode.String())
-	// Load persisted Raft state (currentTerm, votedFor, log entries) from BoltDB
+	// Load persisted Raft state (currentTerm, votedFor, log entries) from PebbleDB
 	if err := raftNode.LoadState(); err != nil {
 		log.Fatalf("failed to load raft state: %v", err)
 	}

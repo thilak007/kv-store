@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	bolt "go.etcd.io/bbolt"
+	"github.com/cockroachdb/pebble"
 )
 
 // takeSnapshot creates a snapshot of the current state machine up to the given index.
@@ -34,7 +34,7 @@ func (rf *RaftNode) takeSnapshot(index uint64, data []byte) {
 		rf.nodeId, index, rf.snapshotTerm, rf.log.Len())
 }
 
-// persistState incrementally writes only changed log entries to bbolt.
+// persistState incrementally writes only changed log entries to PebbleDB.
 // Must be called with raftmu held.
 //
 // Strategy:
@@ -43,129 +43,156 @@ func (rf *RaftNode) takeSnapshot(index uint64, data []byte) {
 //   - On each call, we write entries [persistedUpTo+1 .. memLen] and delete
 //     any stale trailing entries [memLen+1 .. diskLen].
 func (rf *RaftNode) persistState() error {
-	return rf.db.Update(func(tx *bolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte(rf.raftBucket))
+	if err := rf.db.Set(raftKVKey(rf.raftBucket, "currentTerm"), b64(rf.currentTerm), pebble.Sync); err != nil {
+		return fmt.Errorf("failed to persist currentTerm: %w", err)
+	}
+	if err := rf.db.Set(raftKVKey(rf.raftBucket, "votedFor"), []byte(rf.votedFor), pebble.Sync); err != nil {
+		return fmt.Errorf("failed to persist votedFor: %w", err)
+	}
+	if err := rf.db.Set(raftKVKey(rf.raftBucket, "snapshotIndex"), b64(rf.snapshotIndex), pebble.Sync); err != nil {
+		return fmt.Errorf("failed to persist snapshotIndex: %w", err)
+	}
+	if err := rf.db.Set(raftKVKey(rf.raftBucket, "snapshotTerm"), b64(rf.snapshotTerm), pebble.Sync); err != nil {
+		return fmt.Errorf("failed to persist snapshotTerm: %w", err)
+	}
+
+	if len(rf.snapshotBuf) > 0 {
+		if err := rf.db.Set(raftKVKey(rf.raftBucket, "snapshotBuf"), rf.snapshotBuf, pebble.Sync); err != nil {
+			return fmt.Errorf("failed to persist snapshotBuf: %w", err)
+		}
+	} else {
+		if err := rf.db.Delete(raftKVKey(rf.raftBucket, "snapshotBuf"), pebble.Sync); err != nil && err != pebble.ErrNotFound {
+			return fmt.Errorf("failed to delete snapshotBuf: %w", err)
+		}
+	}
+
+	// ── Incremental Log Persistence ────────────────────────────
+	memLen := rf.log.LastIndex()
+	diskLen := uint64(0)
+	if v, ok, err := getRaftValue(rf.db, rf.raftBucket, "logLen"); err != nil {
+		return err
+	} else if ok {
+		diskLen = u64(v)
+	}
+
+	// Write entries from persistedUpTo+1 to memLen (covers new + replaced entries)
+	for i := rf.persistedUpTo + 1; i <= memLen; i++ {
+		entry := rf.log.Get(i)
+		if entry == nil {
+			continue
+		}
+		data, err := encodeEntry(entry)
 		if err != nil {
-			return fmt.Errorf("failed to create bucket %s: %w", rf.raftBucket, err)
+			return fmt.Errorf("failed to encode log entry %d: %w", i, err)
 		}
-
-		// ── Persistent State: currentTerm ──────────────────────────
-		b.Put([]byte("currentTerm"), b64(rf.currentTerm))
-
-		// ── Persistent State: votedFor ─────────────────────────────
-		b.Put([]byte("votedFor"), []byte(rf.votedFor))
-
-		// ── Persistent State: snapshotIndex ────────────────────────
-		b.Put([]byte("snapshotIndex"), b64(rf.snapshotIndex))
-
-		// ── Persistent State: snapshotTerm ─────────────────────────
-		b.Put([]byte("snapshotTerm"), b64(rf.snapshotTerm))
-
-		// ── Persistent State: snapshotBuf ──────────────────────────
-		if len(rf.snapshotBuf) > 0 {
-			b.Put([]byte("snapshotBuf"), rf.snapshotBuf)
+		if err := rf.db.Set(raftKVKey(rf.raftBucket, fmt.Sprintf("log.%d", i)), data, pebble.Sync); err != nil {
+			return fmt.Errorf("failed to persist log entry %d: %w", i, err)
 		}
+	}
 
-		// ── Incremental Log Persistence ────────────────────────────
-		memLen := rf.log.LastIndex()
-		diskLen := uint64(0)
-		if v := b.Get([]byte("logLen")); v != nil {
-			diskLen = u64(v)
+	// Delete stale trailing entries that no longer exist in memory
+	for i := memLen + 1; i <= diskLen; i++ {
+		if err := rf.db.Delete(raftKVKey(rf.raftBucket, fmt.Sprintf("log.%d", i)), pebble.Sync); err != nil && err != pebble.ErrNotFound {
+			return fmt.Errorf("failed to delete stale log entry %d: %w", i, err)
 		}
+	}
 
-		// Write entries from persistedUpTo+1 to memLen (covers new + replaced entries)
-		for i := rf.persistedUpTo + 1; i <= memLen; i++ {
-			entry := rf.log.Get(i)
-			if entry == nil {
-				continue
-			}
-			data, err := encodeEntry(entry)
-			if err != nil {
-				return fmt.Errorf("failed to encode log entry %d: %w", i, err)
-			}
-			if err := b.Put([]byte(fmt.Sprintf("log.%d", i)), data); err != nil {
-				return fmt.Errorf("failed to persist log entry %d: %w", i, err)
-			}
-		}
+	// Update log length and persistence watermark
+	if err := rf.db.Set(raftKVKey(rf.raftBucket, "logLen"), b64(memLen), pebble.Sync); err != nil {
+		return fmt.Errorf("failed to persist log length: %w", err)
+	}
+	rf.persistedUpTo = memLen
 
-		// Delete stale trailing entries that no longer exist in memory
-		for i := memLen + 1; i <= diskLen; i++ {
-			if err := b.Delete([]byte(fmt.Sprintf("log.%d", i))); err != nil {
-				return fmt.Errorf("failed to delete stale log entry %d: %w", i, err)
-			}
-		}
-
-		// Update log length and persistence watermark
-		if err := b.Put([]byte("logLen"), b64(memLen)); err != nil {
-			return fmt.Errorf("failed to persist log length: %w", err)
-		}
-		rf.persistedUpTo = memLen
-
-		return nil
-	})
+	return nil
 }
 
-// LoadState reads currentTerm, votedFor, and the log from bbolt.
+// LoadState reads currentTerm, votedFor, and the log from PebbleDB.
 // Must be called before Start() during server initialization.
 func (rf *RaftNode) LoadState() error {
-	return rf.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(rf.raftBucket))
-		if b == nil {
-			log.Printf("[Node %s] No persisted state found in bucket %s (first run)",
-				rf.nodeId, rf.raftBucket)
-			return nil // No state to load — first run
-		}
+	if v, ok, err := getRaftValue(rf.db, rf.raftBucket, "currentTerm"); err != nil {
+		return err
+	} else if ok {
+		rf.currentTerm = u64(v)
+	}
+	if v, ok, err := getRaftValue(rf.db, rf.raftBucket, "votedFor"); err != nil {
+		return err
+	} else if ok {
+		rf.votedFor = string(v)
+	}
+	if v, ok, err := getRaftValue(rf.db, rf.raftBucket, "snapshotIndex"); err != nil {
+		return err
+	} else if ok {
+		rf.snapshotIndex = u64(v)
+	}
+	if v, ok, err := getRaftValue(rf.db, rf.raftBucket, "snapshotTerm"); err != nil {
+		return err
+	} else if ok {
+		rf.snapshotTerm = u64(v)
+	}
+	if v, ok, err := getRaftValue(rf.db, rf.raftBucket, "snapshotBuf"); err != nil {
+		return err
+	} else if ok {
+		rf.snapshotBuf = v
+	}
 
-		if v := b.Get([]byte("currentTerm")); v != nil {
-			rf.currentTerm = u64(v)
-		}
-		if v := b.Get([]byte("votedFor")); v != nil {
-			rf.votedFor = string(v)
-		}
-		if v := b.Get([]byte("snapshotIndex")); v != nil {
-			rf.snapshotIndex = u64(v)
-		}
-		if v := b.Get([]byte("snapshotTerm")); v != nil {
-			rf.snapshotTerm = u64(v)
-		}
-		if v := b.Get([]byte("snapshotBuf")); v != nil {
-			rf.snapshotBuf = make([]byte, len(v))
-			copy(rf.snapshotBuf, v)
-		}
-
-		if v := b.Get([]byte("logLen")); v != nil {
-			logLen := u64(v)
-			for i := uint64(1); i <= logLen; i++ {
-				key := []byte(fmt.Sprintf("log.%d", i))
-				v := b.Get(key)
-				if v == nil {
-					continue
-				}
-				entry, err := decodeEntry(v)
-				if err != nil {
-					return fmt.Errorf("failed to decode log entry %d: %w", i, err)
-				}
-				rf.log.AppendEntry(entry)
+	if v, ok, err := getRaftValue(rf.db, rf.raftBucket, "logLen"); err != nil {
+		return err
+	} else if ok {
+		logLen := u64(v)
+		for i := uint64(1); i <= logLen; i++ {
+			v, entryOK, err := getRaftValue(rf.db, rf.raftBucket, fmt.Sprintf("log.%d", i))
+			if err != nil {
+				return err
 			}
-			// All loaded entries are now on disk — set watermark
-			rf.persistedUpTo = logLen
+			if !entryOK {
+				continue
+			}
+			entry, err := decodeEntry(v)
+			if err != nil {
+				return fmt.Errorf("failed to decode log entry %d: %w", i, err)
+			}
+			rf.log.AppendEntry(entry)
 		}
+		// All loaded entries are now on disk — set watermark
+		rf.persistedUpTo = logLen
+	} else {
+		log.Printf("[Node %s] No persisted state found in bucket %s (first run)",
+			rf.nodeId, rf.raftBucket)
+	}
 
-		log.Printf("[Node %s] Loaded state from disk: term=%d, votedFor=%s, snapshotIndex=%d, logLen=%d",
-			rf.nodeId, rf.currentTerm, rf.votedFor, rf.snapshotIndex, rf.log.Len())
+	log.Printf("[Node %s] Loaded state from disk: term=%d, votedFor=%s, snapshotIndex=%d, logLen=%d",
+		rf.nodeId, rf.currentTerm, rf.votedFor, rf.snapshotIndex, rf.log.Len())
 
-		return nil
-	})
+	return nil
 }
 
-// b64 converts uint64 to 8-byte big-endian for bbolt storage.
+func raftKVKey(bucket string, key string) []byte {
+	return []byte(bucket + "/" + key)
+}
+
+func getRaftValue(db *pebble.DB, bucket string, key string) ([]byte, bool, error) {
+	v, closer, err := db.Get(raftKVKey(bucket, key))
+	if err == pebble.ErrNotFound {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to read %s/%s: %w", bucket, key, err)
+	}
+	defer closer.Close()
+
+	out := make([]byte, len(v))
+	copy(out, v)
+	return out, true, nil
+}
+
+// b64 converts uint64 to 8-byte big-endian for PebbleDB storage.
 func b64(v uint64) []byte {
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, v)
 	return b
 }
 
-// u64 converts 8-byte big-endian from bbolt back to uint64.
+// u64 converts 8-byte big-endian from PebbleDB back to uint64.
 func u64(b []byte) uint64 {
 	if len(b) != 8 {
 		return 0
