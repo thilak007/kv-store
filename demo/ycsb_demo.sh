@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+set -o pipefail
 
 # =============================================================================
 # Configuration (shared between fuzz and ycsb)
@@ -91,6 +92,9 @@ run_fuzz_test() {
     local crashing=$2          # "no" or "yes"
     local managers="${MANAGERS}"
     local test_name="fuzz ${server_rf} servers ${crashing}"
+    local fuzz_log_dir="logs/fuzz_tests"
+    local fuzz_log_file
+    fuzz_log_file="${fuzz_log_dir}/fuzz_rf${server_rf}_crash${crashing}_$(date +%Y%m%d_%H%M%S).log"
 
     echo ""
     echo "========================================="
@@ -101,8 +105,11 @@ run_fuzz_test() {
     setup_infrastructure "${server_rf}"
 
     # Run the fuzz test
-    just p3::fuzz "${server_rf}" "${crashing}" "${managers}"
-    local test_result=$?
+    echo "Running fuzz test with server_rf=${server_rf} and crashing=${crashing}..."
+    mkdir -p "${fuzz_log_dir}"
+
+    just p3::fuzz "${server_rf}" "${crashing}" "${managers}" 2>&1 | tee "${fuzz_log_file}"
+    local test_result=${PIPESTATUS[0]}
 
     # Cleanup
     cleanup_infrastructure
@@ -175,7 +182,7 @@ echo "Starting Fuzz Test Suite"
 echo "========================================="
 
 # 1.  Fuzz 5 servers, healthy
-# run_fuzz_test 5 no
+run_fuzz_test 5 no
 
 # 2.  Fuzz 5 servers, crashing
 # run_fuzz_test 5 yes
@@ -193,7 +200,7 @@ echo "========================================="
 echo "Starting YCSB Test Suite"
 echo "========================================="
 
-run_ycsb_test 10 f 3
+# run_ycsb_test 10 f 3
 
 # # 1) 10 clients on workloads A-F for RF in {1,3,5}
 # for workload in a b c d e f; do
