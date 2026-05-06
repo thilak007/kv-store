@@ -262,9 +262,9 @@ def load_bench_results(result_dir, report_dir):
     plt.ylabel("P99 latency (op-agnostic, us)")
 
     plt.tight_layout()
-    plt.savefig(f"{report_dir}/plots-p3/ycsb-ten-clients.png", dpi=200)
+    plt.savefig(f"{report_dir}/plots-final-project/ycsb-ten-clients.png", dpi=200)
     plt.close()
-    results["ycsb-ten-clients"] = "plots-p3/ycsb-ten-clients.png"
+    results["ycsb-ten-clients"] = "plots-final-project/ycsb-ten-clients.png"
 
     # tput-trend
     server_rf_list = [1, 5]
@@ -293,9 +293,9 @@ def load_bench_results(result_dir, report_dir):
     plt.legend(fontsize=10)
 
     plt.tight_layout()
-    plt.savefig(f"{report_dir}/plots-p3/ycsb-tput-trend.png", dpi=200)
+    plt.savefig(f"{report_dir}/plots-final-project/ycsb-tput-trend.png", dpi=200)
     plt.close()
-    results["ycsb-tput-trend"] = "plots-p3/ycsb-tput-trend.png"
+    results["ycsb-tput-trend"] = "plots-final-project/ycsb-tput-trend.png"
 
     return results
 
@@ -308,7 +308,7 @@ def load_all_run_results(result_dir, report_dir):
 
 
 def generate_report(results, report_dir):
-    with open(f"{report_dir}/proj3.md", "w") as f:
+    with open(f"{report_dir}/final-project.md", "w") as f:
         f.write(
             REPORT_MD.format(
                 results["fuzz-5-no"],
@@ -329,9 +329,9 @@ if __name__ == "__main__":
 
     check_dir_exists(f"{args.result_dir}/fuzz")
     check_dir_exists(f"{args.result_dir}/bench")
-    if not os.path.isdir(f"{args.report_dir}/plots-p3"):
-        os.system(f"mkdir -p {args.report_dir}/plots-p3")
-    check_dir_exists(f"{args.report_dir}/plots-p3")
+    if not os.path.isdir(f"{args.report_dir}/plots-final-project"):
+        os.system(f"mkdir -p {args.report_dir}/plots-final-project")
+    check_dir_exists(f"{args.report_dir}/plots-final-project")
 
     cprint(
         f"Loading logged run results from '{args.result_dir}/'...",
@@ -343,11 +343,11 @@ if __name__ == "__main__":
     pprint(results)
 
     cprint(
-        f"Generating summary report to '{args.report_dir}/proj3.md'...",
+        f"Generating summary report to '{args.report_dir}/final-project.md'...",
         "yellow",
         attrs=["bold"],
     )
-    if os.path.isfile(f"{args.report_dir}/proj3.md"):
+    if os.path.isfile(f"{args.report_dir}/final-project.md"):
         cprint(
             "File already exists! Press Enter to overwrite, or Ctrl-C to abort...",
             "blue",
