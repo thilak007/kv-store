@@ -12,7 +12,7 @@ The source code for the kvstore is housed in the `go_grpc/` folder and majorly w
 
 ### Architecture Diagram:
 
-![KVStore Architecture](kvstore.png)
+![KVStore Architecture](kvstore-architecture-diagram.png)
 
 
 ## Design Walkthrough
